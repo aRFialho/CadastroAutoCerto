@@ -1,0 +1,33 @@
+# Core Performance - Excel Processing
+polars>=0.20.0
+openpyxl>=3.1.0
+xlsxwriter>=3.2.0
+pandas>=2.1.0
+
+# UI Moderna
+customtkinter>=5.2.0
+pillow>=10.0.0
+
+# Async & Performance
+aiofiles>=23.0.0
+aiosmtplib>=3.0.0
+
+# Data & Validation
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+
+# Logging & CLI
+loguru>=0.7.0
+rich>=13.0.0
+typer>=0.9.0
+
+# Email & Templates
+jinja2>=3.1.0
+premailer>=3.10.0
+
+# Build & Package
+pyinstaller>=6.0.0
+
+# Utilities
+pathlib2>=2.3.7
+typing-extensions>=4.8.0
