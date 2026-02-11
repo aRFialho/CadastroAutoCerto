@@ -235,7 +235,9 @@ class AppConfig(BaseModel):
 
     # ✅ NOVO CAMPO PARA CÓDIGO DO FORNECEDOR
     supplier_code: int = Field(0, description="Código do fornecedor resolvido do banco de dados")
-
+    # ✅ NOVOS CAMPOS PARA EXCEÇÃO DE PRAZO
+    enable_exception_prazo: bool = Field(False, description="Habilitar exceção de prazo para entrega")
+    exception_prazo_days: int = Field(0, description="Dias de prazo de exceção")
     batch_size: int = 1000
     max_workers: int = 4
 

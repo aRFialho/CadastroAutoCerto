@@ -8,6 +8,7 @@ import math
 import html
 import json
 import pandas as pd
+import unicodedata
 
 from ..core.models import (
     ProductOrigin,
@@ -930,24 +931,29 @@ class ProductProcessor:
 
             tipo_produto_code = self._get_tipo_produto_code(product.tipo_produto)
             logger.success(f"  🎯 Tipo Produto Código FINAL: {tipo_produto_code}")
-            # ✅ NOVA LÓGICA: ESTOQUE DE SEGURANÇA
+            # ✅ NOVA LÓGICA: ESTOQUE DE SEGURANÇA (Fornecedor vs Fábrica)
             logger.info(f"  📦 === CALCULANDO ESTOQUE DE SEGURANÇA - EAN: {product.ean} ===")
             logger.info(f"    - Tipo produto original: '{product.tipo_produto}'")
             logger.info(f"    - Tipo produto código: '{tipo_produto_code}'")
 
-            # Verificar se é unitário E código 0
-            is_unitario = (product.tipo_produto and
-                           product.tipo_produto.lower().strip() in ["unitário", "unitario"])
-            is_codigo_zero = (tipo_produto_code == "0")
+            tipo_norm = self._norm_tipo_produto(product.tipo_produto or "")
 
-            if is_unitario and is_codigo_zero:
-                estoque_seg_final = 1000
-                logger.success(f"    ✅ UNITÁRIO + CÓDIGO 0: Estoque de Segurança = 1000")
+            is_fabrica_mode = self._is_fabrica_mode()
+            is_dmov = (self.config.default_brand and self.config.default_brand.lower().strip() == "dmov")
+            is_fabrica = (is_fabrica_mode or is_dmov)
+
+            is_variacao = (tipo_norm in ("variacao", "var"))
+            is_unitario = (tipo_norm in ("unitario", "un", "u"))
+
+            if not is_fabrica:
+                # 🏪 FORNECEDOR: estoque_seg = 1000 só nas variações
+                estoque_seg_final = 1000 if is_variacao else 0
+                logger.success(f"    🏪 FORNECEDOR: variação={is_variacao} → Estoque de Segurança = {estoque_seg_final}")
             else:
-                estoque_seg_final = 0
-                logger.info(f"    📝 OUTRAS COMBINAÇÕES: Estoque de Segurança = 0")
-                logger.info(f"      - É unitário: {is_unitario}")
-                logger.info(f"      - É código 0: {is_codigo_zero}")
+                # 🏭 FÁBRICA: estoque_seg = 1000 só no unitário
+                estoque_seg_final = 1000 if is_unitario else 0
+                logger.success(
+                    f"    🏭 FÁBRICA/DMOV: unitário={is_unitario} → Estoque de Segurança = {estoque_seg_final}")
 
             logger.info(f"    🎯 Estoque de Segurança FINAL: {estoque_seg_final}")
 
@@ -1018,68 +1024,78 @@ class ProductProcessor:
             elif not self.cost_pricing_engine:
                 logger.debug(f"  ℹ️ Precificação automática desabilitada")
 
-            # ✅ NOVA LÓGICA: BUSCAR FORNECEDOR E APLICAR PRAZO ESPECIAL
-            fornecedor_final = str(
-                self.config.supplier_code) if self.config.supplier_code else self.config.default_brand
-            dias_entrega_final = product.prazo or 0
-            site_disponibilidade_final = product.prazo or 0
+            # ✅ NOVO: VERIFICAÇÃO DE PRAZO DE EXCEÇÃO
+            dias_entrega_final = 0
+            site_disponibilidade_final = 0
+            fornecedor_final = ""
 
-            # 🔍 BUSCAR FORNECEDOR NO BANCO PARA OBTER PRAZO
-            if self.config.default_brand:
-                logger.info(f"🔍 === BUSCANDO FORNECEDOR NO BANCO ===")
-                logger.info(f"  📝 Marca padrão: '{self.config.default_brand}'")
+            if self.config.enable_exception_prazo:
+                exception_prazo = self.config.exception_prazo_days
+                dias_entrega_final = exception_prazo
+                site_disponibilidade_final = exception_prazo
+                fornecedor_final = str(self.config.supplier_code) if self.config.supplier_code else self.config.default_brand
+                logger.success(f"  🎯 PRAZO DE EXCEÇÃO APLICADO: {exception_prazo} dias para EAN {product.ean}")
+                logger.info(f"    - Dias para Entrega: {dias_entrega_final}")
+                logger.info(f"    - Site Disponibilidade: {site_disponibilidade_final}")
+            else:
+                # ✅ LÓGICA EXISTENTE PARA BUSCAR FORNECEDOR E APLICAR PRAZO ESPECIAL
+                fornecedor_final = str(self.config.supplier_code) if self.config.supplier_code else self.config.default_brand
 
-                supplier = self.supplier_db.search_supplier_by_name(self.config.default_brand)
+                # 🔍 BUSCAR FORNECEDOR NO BANCO PARA OBTER PRAZO
+                if self.config.default_brand:
+                    logger.info(f"🔍 === BUSCANDO FORNECEDOR NO BANCO ===")
+                    logger.info(f"  🏷️ Marca padrão: '{self.config.default_brand}'")
 
-                if supplier:
-                    logger.success(f"  ✅ Fornecedor encontrado no banco!")
-                    logger.success(f"    - Nome: {supplier.name}")
-                    logger.success(f"    - Código: {supplier.code}")
-                    logger.success(f"    - Prazo base: {supplier.prazo_dias} dias")
+                    supplier = self.supplier_db.search_supplier_by_name(self.config.default_brand)
 
-                    # ✅ USAR CÓDIGO DO BANCO
-                    fornecedor_final = str(supplier.code)
+                    if supplier:
+                        logger.success(f"  ✅ Fornecedor encontrado no banco!")
+                        logger.success(f"    - Nome: {supplier.name}")
+                        logger.success(f"    - Código: {supplier.code}")
+                        logger.success(f"    - Prazo base: {supplier.prazo_dias} dias")
 
-                    if supplier.prazo_dias > 0:
-                        # ✅ PRIMEIRO: Pegar prazo base do fornecedor
-                        prazo_base = supplier.prazo_dias
-                        logger.info(f"  📅 Prazo base do fornecedor: {prazo_base} dias")
+                        # ✅ USAR CÓDIGO DO BANCO
+                        fornecedor_final = str(supplier.code)
 
-                        # ✅ SEGUNDO: APLICAR LÓGICA ESPECIAL PARA DMOV (ANTES DE DEFINIR FINAL)
-                        prazo_final = self._get_prazo_especial_dmov(product, prazo_base)
-                        logger.info(f"  🎯 Prazo após verificação especial: {prazo_final} dias")
+                        if supplier.prazo_dias > 0:
+                            # ✅ PRIMEIRO: Pegar prazo base do fornecedor
+                            prazo_base = supplier.prazo_dias
+                            logger.info(f"  📅 Prazo base do fornecedor: {prazo_base} dias")
 
-                        # ✅ TERCEIRO: Definir prazos finais
-                        dias_entrega_final = prazo_final
-                        site_disponibilidade_final = prazo_final
+                            # ✅ SEGUNDO: APLICAR LÓGICA ESPECIAL PARA DMOV (ANTES DE DEFINIR FINAL)
+                            prazo_final = self._get_prazo_especial_dmov(product, prazo_base)
+                            logger.info(f"  🎯 Prazo após verificação especial: {prazo_final} dias")
 
-                        # ✅ LOG DO RESULTADO
-                        if prazo_final != prazo_base:
-                            logger.success(f"  🎯 PRAZO ESPECIAL APLICADO: {prazo_final} dias (base era {prazo_base})")
+                            # ✅ TERCEIRO: Definir prazos finais
+                            dias_entrega_final = prazo_final
+                            site_disponibilidade_final = prazo_final
+
+                            # ✅ LOG DO RESULTADO
+                            if prazo_final != prazo_base:
+                                logger.success(f"  🎯 PRAZO ESPECIAL APLICADO: {prazo_final} dias (base era {prazo_base})")
+                            else:
+                                logger.success(f"  📝 PRAZO PADRÃO MANTIDO: {prazo_final} dias")
                         else:
-                            logger.success(f"  📝 PRAZO PADRÃO MANTIDO: {prazo_final} dias")
+                            logger.info(f"  ℹ️ Fornecedor sem prazo definido, usando valor da planilha: {product.prazo}")
+                            # ✅ MESMO SEM PRAZO NO BANCO, VERIFICAR ESPECIAIS DMOV
+                            prazo_planilha = product.prazo or 0
+                            prazo_final = self._get_prazo_especial_dmov(product, prazo_planilha)
+                            dias_entrega_final = prazo_final
+                            site_disponibilidade_final = prazo_final
                     else:
-                        logger.info(f"  ℹ️ Fornecedor sem prazo definido, usando valor da planilha: {product.prazo}")
+                        logger.warning(f"  ⚠️ Fornecedor '{self.config.default_brand}' não encontrado no banco")
+                        logger.warning(f"  🔧 Usando configuração padrão")
 
-                        # ✅ MESMO SEM PRAZO NO BANCO, VERIFICAR ESPECIAIS DMOV
-                        prazo_planilha = product.prazo or 0
-                        prazo_final = self._get_prazo_especial_dmov(product, prazo_planilha)
+                        # ✅ MESMO SEM FORNECEDOR NO BANCO, VERIFICAR ESPECIAIS DMOV
+                        prazo_default = product.prazo or 0
+                        prazo_final = self._get_prazo_especial_dmov(product, prazo_default)
                         dias_entrega_final = prazo_final
                         site_disponibilidade_final = prazo_final
-                else:
-                    logger.warning(f"  ⚠️ Fornecedor '{self.config.default_brand}' não encontrado no banco")
-                    logger.warning(f"  📝 Usando configuração padrão")
 
-                    # ✅ MESMO SEM FORNECEDOR NO BANCO, VERIFICAR ESPECIAIS DMOV
-                    prazo_default = product.prazo or 0
-                    prazo_final = self._get_prazo_especial_dmov(product, prazo_default)
-                    dias_entrega_final = prazo_final
-                    site_disponibilidade_final = prazo_final
-
-            logger.info(f"  📊 === RESULTADO FINAL ===")
-            logger.info(f"  📊 FORNECEDOR FINAL: '{fornecedor_final}'")
-            logger.info(f"  ⏱️ PRAZO FINAL: {dias_entrega_final} dias")
-            logger.info(f"  🌐 SITE DISPONIBILIDADE: {site_disponibilidade_final} dias")
+                logger.info(f"  📊 === RESULTADO FINAL ===")
+                logger.info(f"  📊 FORNECEDOR FINAL: '{fornecedor_final}'")
+                logger.info(f"  ⏱️ PRAZO FINAL: {dias_entrega_final} dias")
+                logger.info(f"  🌐 SITE DISPONIBILIDADE: {site_disponibilidade_final} dias")
 
             produto_dest = ProductDestination(
                 # Dados básicos
@@ -1433,46 +1449,43 @@ class ProductProcessor:
             return desc_html
 
     def _get_tipo_produto_code(self, tipo_produto: Optional[str]) -> str:
-        """Converte tipo de produto para código - LÓGICA COM MODO FÁBRICA/FORNECEDOR"""
-        if not tipo_produto:
-            return "0"  # Default = UNITÁRIO
+        """Converte tipo de produto para código - NOVA LÓGICA (Fornecedor vs Fábrica)"""
+        # Default seguro
+        tipo_raw = (tipo_produto or "").strip()
+        tipo_norm = self._norm_tipo_produto(tipo_raw)
 
-        tipo_lower = tipo_produto.lower().strip()
-
-        # ✅ VERIFICAR SE É MODO FÁBRICA
+        # ✅ VERIFICAR MODO FÁBRICA
         is_fabrica_mode = self._is_fabrica_mode()
 
-        # ✅ VALIDAÇÃO EXTRA: Se marca é DMOV, forçar modo fábrica
-        is_dmov = (self.config.default_brand and
-                   self.config.default_brand.lower().strip() == "dmov")
+        # ✅ (Opcional redundante, mas mantém compatível com seu log/legado)
+        is_dmov = (self.config.default_brand and self.config.default_brand.lower().strip() == "dmov")
 
         logger.info(f"  🏭 Modo Fábrica ativo: {is_fabrica_mode}")
-        logger.info(f"  🏷️ Tipo produto: '{tipo_lower}'")
+        logger.info(f"  🏷️ Tipo produto (raw): '{tipo_raw}' | (norm): '{tipo_norm}'")
         logger.info(f"  🏭 Marca DMOV: {is_dmov}")
 
-        if is_fabrica_mode or is_dmov:
-            # 🏭 MODO FÁBRICA: APENAS PAI = 0, RESTO = 2
-            if tipo_lower == "pai":
-                logger.info(f"  🔵 FÁBRICA/DMOV - PAI: Tipo = 0")
-                return "0"  # ✅ APENAS PAI = 0
-            else:
-                # ✅ TODOS OS OUTROS (UNITÁRIO, VARIAÇÃO, KIT, etc.) = 2
-                logger.info(f"  🟡 FÁBRICA/DMOV - {tipo_lower.upper()}: Tipo = 2")
-                return "2"
-        else:
-            # 🏪 MODO FORNECEDOR: Lógica original
-            if tipo_lower in ["pai", "unitário", "unitario", ""]:
-                logger.info(f"  🔵 FORNECEDOR - {tipo_lower.upper() or 'VAZIO'}: Tipo = 0")
-                return "0"
-            elif tipo_lower in ["variação", "variacao"]:
-                logger.info(f"  🟡 FORNECEDOR - VARIAÇÃO: Tipo = 2")
-                return "2"
-            elif "kit" in tipo_lower:
-                logger.info(f"  📦 FORNECEDOR - KIT: Tipo = 2")
-                return "2"
-            else:
-                logger.info(f"  ⚪ FORNECEDOR - DESCONHECIDO ('{tipo_lower}'): Tipo = 0 (default)")
-                return "0"
+        # 🏪 FORNECEDOR: tudo tipo 0 (regra nova)
+        if not (is_fabrica_mode or is_dmov):
+            logger.info("  🔵 FORNECEDOR: Tipo = 0 (regra: tudo 0)")
+            return "0"
+
+        # 🏭 FÁBRICA: Pai e Unitário = 0 | Variação = 2 | Kit = 2 (mantido)
+        if tipo_norm in ("variacao", "var"):
+            logger.info("  🟡 FÁBRICA/DMOV - VARIAÇÃO: Tipo = 2")
+            return "2"
+
+        if "kit" in tipo_norm:
+            logger.info("  📦 FÁBRICA/DMOV - KIT: Tipo = 2")
+            return "2"
+
+        # pai, unitario, vazio, ou qualquer outro: 0 (pela regra que você pediu)
+        logger.info("  🔵 FÁBRICA/DMOV - PAI/UNITÁRIO/OUTROS: Tipo = 0")
+        return "0"
+
+    def _norm_tipo_produto(self, s: str) -> str:
+        s = (s or "").strip().lower()
+        s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
+        return s
 
     def _is_fabrica_mode(self) -> bool:
         """Verifica se está no modo Fábrica"""

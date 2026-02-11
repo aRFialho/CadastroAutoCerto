@@ -1,4 +1,4 @@
-"""Interface gráfica principal com CustomTkinter"""
+""""Interface gráfica principal com CustomTkinter"""
 
 import customtkinter as ctk
 import tkinter as tk
@@ -129,12 +129,53 @@ class MainWindow:
         except Exception as e:
             logger.error(f"Erro ao inicializar banco: {e}")
 
+    def initialize_embedded_databases(self):
+        """Copia bancos embarcados para pasta de trabalho se não existirem"""
+        try:
+            # Pasta de destino dos bancos
+            db_output_dir = self.config.output_dir
+            db_output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Lista de bancos para copiar
+            databases_to_copy = [
+                ("suppliers.db", "Fornecedores"),
+                ("DB_CATEGORIAS.json", "Categorias"),
+                ("product_catalog.db", "Catálogo")
+            ]
+
+            for db_file, db_name in databases_to_copy:
+                # Verificar se existe banco embarcado
+                import sys
+                if hasattr(sys, '_MEIPASS'):
+                    # Executável PyInstaller
+                    embedded_db = Path(sys._MEIPASS) / "databases" / db_file
+                else:
+                    # Desenvolvimento
+                    embedded_db = Path("outputs") / db_file
+
+                # Caminho de destino
+                target_db = db_output_dir / db_file
+
+                # Só copia se não existir
+                if embedded_db.exists() and not target_db.exists():
+                    import shutil
+                    shutil.copy2(embedded_db, target_db)
+                    logger.info(f"✅ Banco {db_name} copiado: {embedded_db} → {target_db}")
+                elif target_db.exists():
+                    logger.info(f"ℹ️ Banco {db_name} já existe: {target_db}")
+
+        except Exception as e:
+            logger.error(f"❌ Erro ao inicializar bancos embarcados: {e}")
+
     def setup_ui(self):
         """Configura a interface"""
         self.root = ctk.CTk()
         self.root.title("📊 Cadastro Automático D'Rossi v2.1")
         self.root.minsize(800, 700)
-
+        # ✅ VARIÁVEIS DA INTERFACE (APÓS CRIAR A JANELA PRINCIPAL)
+        self.brand_var = tk.StringVar(value=self.config.default_brand)
+        self.enable_exception_prazo_var = tk.BooleanVar(value=self.config.enable_exception_prazo)
+        self.exception_prazo_days_var = tk.StringVar(value=str(self.config.exception_prazo_days))
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
         # Ícone
@@ -148,6 +189,7 @@ class MainWindow:
         self.create_header()
         self.create_main_content()
         self.create_footer()
+        self.create_floating_color_button()
 
         self.root.after(100, self.maximize_window)
 
@@ -340,7 +382,6 @@ class MainWindow:
             font=ctk.CTkFont(size=14, weight="bold")
         ).grid(row=0, column=0, sticky="w", padx=(0, 20), pady=10)
 
-        self.brand_var = tk.StringVar(value=self.config.default_brand)
         brand_entry = ctk.CTkEntry(
             config_grid,
             textvariable=self.brand_var,
@@ -399,6 +440,49 @@ class MainWindow:
             text_color=("gray60", "gray40"),
             wraplength=600
         ).pack(anchor="w")
+
+        # ✅ ADICIONAR AQUI - NOVA SEÇÃO: Exceção de Prazo
+        exception_prazo_frame = ctk.CTkFrame(config_grid, fg_color="transparent")
+        exception_prazo_frame.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(15, 0))
+
+        self.enable_exception_prazo_checkbox = ctk.CTkCheckBox(
+            exception_prazo_frame,
+            text="Exceção de Prazo para Entrega",
+            variable=self.enable_exception_prazo_var,
+            font=ctk.CTkFont(size=14, weight="bold"),
+            command=self.toggle_exception_prazo_fields
+        )
+        self.enable_exception_prazo_checkbox.pack(anchor="w", pady=(0, 10))
+
+        # Campo de entrada para o prazo de exceção
+        exception_input_frame = ctk.CTkFrame(exception_prazo_frame, fg_color="transparent")
+        exception_input_frame.pack(fill="x", padx=(25, 0), pady=(0, 10))
+
+        ctk.CTkLabel(
+            exception_input_frame,
+            text="Prazo de Exceção (dias):",
+            font=ctk.CTkFont(size=12)
+        ).pack(side="left", anchor="w", padx=(0, 10))
+
+        self.exception_prazo_entry = ctk.CTkEntry(
+            exception_input_frame,
+            textvariable=self.exception_prazo_days_var,
+            placeholder_text="0",
+            width=80
+        )
+        self.exception_prazo_entry.pack(side="left", anchor="w")
+
+        # Info
+        ctk.CTkLabel(
+            exception_prazo_frame,
+            text="ℹ️ Se habilitado, este prazo será usado para todos os produtos, ignorando o do fornecedor.",
+            font=ctk.CTkFont(size=11),
+            text_color=("gray60", "gray40"),
+            wraplength=600
+        ).pack(anchor="w", pady=(5, 0))
+
+        # Chamar a função para definir o estado inicial dos campos
+        self.toggle_exception_prazo_fields()
 
         ctk.CTkLabel(
             info_frame,
@@ -523,6 +607,11 @@ class MainWindow:
 
         for widget in pricing_widgets:
             widget.configure(state=state)
+
+    def toggle_exception_prazo_fields(self):
+        """Ativa/desativa campo de prazo de exceção"""
+        state = "normal" if self.enable_exception_prazo_var.get() else "disabled"
+        self.exception_prazo_entry.configure(state=state)
 
     def create_email_section(self):
         """Seção de configuração de e-mail"""
@@ -737,7 +826,6 @@ class MainWindow:
             width=130
         ).pack(side="left", padx=(0, 10))
 
-        # ✅ BOTÃO CUSTOS CORRIGIDO
         ctk.CTkButton(
             second_row,
             text="💰 Custos",
@@ -784,24 +872,603 @@ class MainWindow:
             text_color=("gray60", "gray40")
         ).pack(expand=True)
 
-    # ✅ MÉTODOS CORRIGIDOS COM INDENTAÇÃO ADEQUADA
-
-    def select_file(self, var: tk.StringVar, title: str):
-        """Seleciona arquivo"""
-        file_path = filedialog.askopenfilename(
-            title=title,
-            filetypes=[
-                ("Excel files", "*.xlsx *.xls"),
-                ("All files", "*.*")
-            ]
+    def create_floating_color_button(self):
+        """Cria botão flutuante de personalização de cores"""
+        # ✅ FRAME FLUTUANTE NO CANTO INFERIOR DIREITO
+        self.floating_frame = ctk.CTkFrame(
+            self.root,
+            width=60,
+            height=60,
+            corner_radius=30,
+            fg_color=("gray75", "gray25")
         )
-        if file_path:
-            var.set(file_path)
+        self.floating_frame.place(relx=0.98, rely=0.95, anchor="se")
+        self.floating_frame.pack_propagate(False)
 
-            # ✅ AUTO-ATUALIZAR ABAS SE FOR ARQUIVO DE ORIGEM
-            if var == self.origin_file_var:
-                # ✅ USAR TIMER PARA EVITAR TRAVAMENTO DA UI
-                self.root.after(100, self.on_file_selected)
+        # ✅ BOTÃO DE PALHETA DE CORES
+        self.color_palette_btn = ctk.CTkButton(
+            self.floating_frame,
+            text="🎨",
+            width=50,
+            height=50,
+            corner_radius=25,
+            font=ctk.CTkFont(size=20),
+            command=self.show_color_customization,
+            fg_color=("gray70", "gray30"),
+            hover_color=("gray60", "gray40")
+        )
+        self.color_palette_btn.pack(expand=True, fill="both", padx=5, pady=5)
+
+    def show_color_customization(self):
+        """Mostra janela de personalização de cores - APENAS COR PRINCIPAL E FONTE"""
+        try:
+            # ✅ JANELA DE PERSONALIZAÇÃO
+            color_window = ctk.CTkToplevel(self.root)
+            color_window.title("🎨 Personalização de Cores")
+            color_window.geometry("500x600")
+            color_window.transient(self.root)
+            color_window.grab_set()
+
+            # ✅ CENTRALIZAR JANELA
+            color_window.update_idletasks()
+            x = (color_window.winfo_screenwidth() // 2) - (500 // 2)
+            y = (color_window.winfo_screenheight() // 2) - (600 // 2)
+            color_window.geometry(f"500x600+{x}+{y}")
+
+            # ✅ HEADER
+            header_frame = ctk.CTkFrame(color_window)
+            header_frame.pack(fill="x", padx=20, pady=(20, 10))
+
+            ctk.CTkLabel(
+                header_frame,
+                text="🎨 Personalização de Cores",
+                font=ctk.CTkFont(size=24, weight="bold")
+            ).pack(pady=15)
+
+            ctk.CTkLabel(
+                header_frame,
+                text="Personalize as cores do sistema",
+                font=ctk.CTkFont(size=14),
+                text_color=("gray60", "gray40")
+            ).pack(pady=(0, 15))
+
+            # ✅ SEÇÃO 1: COR PRINCIPAL DO APP
+            main_color_frame = ctk.CTkFrame(color_window)
+            main_color_frame.pack(fill="x", padx=20, pady=(0, 15))
+
+            ctk.CTkLabel(
+                main_color_frame,
+                text="🎨 Cor Principal do App",
+                font=ctk.CTkFont(size=18, weight="bold"),
+                anchor="w"
+            ).pack(fill="x", padx=20, pady=(20, 10))
+
+            # ✅ CORES PREDEFINIDAS PRINCIPAIS
+            main_colors_grid = ctk.CTkFrame(main_color_frame, fg_color="transparent")
+            main_colors_grid.pack(fill="x", padx=20, pady=(0, 15))
+
+            main_colors = [
+                ("🔵 Azul", "#1f538d"),
+                ("🟢 Verde", "#2fa572"),
+                ("🟣 Roxo", "#7b2cbf"),
+                ("🟡 Amarelo", "#FFD700"),
+                ("🔴 Vermelho", "#DC143C"),
+                ("🟠 Laranja", "#FF8C00"),
+                ("⚫ Preto", "#2b2b2b"),
+                ("🟤 Marrom", "#8B4513")
+            ]
+
+            for i, (name, color_hex) in enumerate(main_colors):
+                row = i // 4
+                col = i % 4
+
+                color_btn = ctk.CTkButton(
+                    main_colors_grid,
+                    text=name,
+                    width=100,
+                    height=40,
+                    font=ctk.CTkFont(size=11),
+                    fg_color=color_hex,
+                    hover_color=self._darken_color(color_hex),
+                    command=lambda c=color_hex: self.apply_main_color(c)
+                )
+                color_btn.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+
+            # ✅ CONFIGURAR GRID
+            for i in range(4):
+                main_colors_grid.grid_columnconfigure(i, weight=1)
+
+            # ✅ BOTÃO PERSONALIZADO PRINCIPAL
+            ctk.CTkButton(
+                main_color_frame,
+                text="🎨 Escolher Cor Principal Personalizada",
+                command=self.choose_custom_main_color,
+                height=40,
+                font=ctk.CTkFont(size=14, weight="bold")
+            ).pack(fill="x", padx=20, pady=(15, 20))
+
+            # ✅ SEÇÃO 2: COR DA FONTE/TEXTO
+            font_color_frame = ctk.CTkFrame(color_window)
+            font_color_frame.pack(fill="x", padx=20, pady=(0, 15))
+
+            ctk.CTkLabel(
+                font_color_frame,
+                text="📝 Cor da Fonte/Texto",
+                font=ctk.CTkFont(size=18, weight="bold"),
+                anchor="w"
+            ).pack(fill="x", padx=20, pady=(20, 10))
+
+            # ✅ CORES PREDEFINIDAS PARA FONTE
+            font_colors_grid = ctk.CTkFrame(font_color_frame, fg_color="transparent")
+            font_colors_grid.pack(fill="x", padx=20, pady=(0, 15))
+
+            font_colors = [
+                ("⚪ Branco", "#FFFFFF"),
+                ("⚫ Preto", "#000000"),
+                ("🔵 Azul Escuro", "#1e3a8a"),
+                ("🟢 Verde Escuro", "#166534"),
+                ("🔴 Vermelho Escuro", "#991b1b"),
+                ("🟣 Roxo Escuro", "#581c87"),
+                ("🟤 Marrom Escuro", "#451a03"),
+                ("🔘 Cinza", "#6b7280")
+            ]
+
+            for i, (name, color_hex) in enumerate(font_colors):
+                row = i // 4
+                col = i % 4
+
+                # ✅ COR DE FUNDO CONTRASTANTE PARA VISUALIZAR A COR DA FONTE
+                bg_color = "#FFFFFF" if color_hex in ["#FFFFFF", "#FFD700"] else "#2b2b2b"
+
+                color_btn = ctk.CTkButton(
+                    font_colors_grid,
+                    text=name,
+                    width=100,
+                    height=40,
+                    font=ctk.CTkFont(size=11),
+                    fg_color=bg_color,
+                    text_color=color_hex,
+                    hover_color=self._darken_color(bg_color),
+                    command=lambda c=color_hex: self.apply_font_color(c)
+                )
+                color_btn.grid(row=row, column=col, padx=5, pady=5, sticky="ew")
+
+            # ✅ CONFIGURAR GRID
+            for i in range(4):
+                font_colors_grid.grid_columnconfigure(i, weight=1)
+
+            # ✅ BOTÃO PERSONALIZADO FONTE
+            ctk.CTkButton(
+                font_color_frame,
+                text="📝 Escolher Cor da Fonte Personalizada",
+                command=self.choose_custom_font_color,
+                height=40,
+                font=ctk.CTkFont(size=14, weight="bold")
+            ).pack(fill="x", padx=20, pady=(15, 20))
+
+            # ✅ BOTÕES DE AÇÃO
+            action_frame = ctk.CTkFrame(color_window)
+            action_frame.pack(fill="x", padx=20, pady=(0, 20))
+
+            buttons_frame = ctk.CTkFrame(action_frame, fg_color="transparent")
+            buttons_frame.pack(fill="x", padx=20, pady=15)
+
+            # ✅ RESET E FECHAR
+            ctk.CTkButton(
+                buttons_frame,
+                text="🔄 Resetar Padrão",
+                command=self.reset_default_colors,
+                width=140,
+                height=40
+            ).pack(side="left", padx=(0, 10))
+
+            ctk.CTkButton(
+                buttons_frame,
+                text="✅ Fechar",
+                command=color_window.destroy,
+                width=140,
+                height=40
+            ).pack(side="right")
+
+        except Exception as e:
+            logger.error(f"Erro ao abrir personalização de cores: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao abrir personalização:\n{e}")
+
+    def apply_main_color(self, color_hex: str):
+        """Aplica cor principal COMPLETA - fundo, janelas e botões com tons"""
+        try:
+            logger.info(f"🎨 Aplicando cor principal completa: {color_hex}")
+
+            # ✅ CALCULAR TONS DA COR
+            base_color = color_hex  # Cor original para fundos
+            darker_color = self._darken_color(color_hex, 0.8)  # 20% mais escuro para botões
+            lighter_color = self._lighten_color(color_hex, 0.9)  # 10% mais claro para hover
+
+            logger.info(f"🎨 Tons calculados:")
+            logger.info(f"   Base (fundos): {base_color}")
+            logger.info(f"   Escuro (botões): {darker_color}")
+            logger.info(f"   Claro (hover): {lighter_color}")
+
+            # ✅ 1. APLICAR COR DE FUNDO DA JANELA PRINCIPAL
+            if hasattr(self, 'root'):
+                self.root.configure(fg_color=base_color)
+
+            # ✅ 2. ATUALIZAR TODOS OS FRAMES PRINCIPAIS
+            main_frames = [
+                'main_frame'
+            ]
+
+            for frame_name in main_frames:
+                if hasattr(self, frame_name):
+                    frame = getattr(self, frame_name)
+                    frame.configure(fg_color=base_color)
+
+            # ✅ 3. ATUALIZAR FRAMES DE SEÇÕES COM TOM MAIS CLARO
+            self._update_section_frames(lighter_color)
+
+            # ✅ 4. ATUALIZAR BOTÕES COM TOM MAIS ESCURO
+            self._update_all_buttons_with_darker_tone(darker_color, lighter_color)
+
+            # ✅ 5. ATUALIZAR PROGRESS BAR
+            if hasattr(self, 'progress_bar'):
+                self.progress_bar.configure(progress_color=darker_color)
+
+            # ✅ 6. ATUALIZAR CHECKBOXES E COMBOBOXES
+            self._update_interactive_elements(darker_color)
+
+            # ✅ 7. FORÇAR ATUALIZAÇÃO COMPLETA
+            self._force_complete_interface_update()
+
+            messagebox.showinfo("✅ Sucesso",
+                                f"Tema completo aplicado!\n\n🎨 Cor base: {base_color}\n🔘 Botões: {darker_color}")
+
+        except Exception as e:
+            logger.error(f"Erro ao aplicar cor principal: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao aplicar cor:\n{e}")
+
+    def _update_section_frames(self, lighter_color: str):
+        """Atualiza frames de seções com cor mais clara"""
+        try:
+            def update_frames_recursive(widget):
+                try:
+                    # ✅ SE É UM FRAME CTK, ATUALIZAR
+                    if isinstance(widget, ctk.CTkFrame):
+                        # ✅ NÃO ATUALIZAR FRAMES TRANSPARENTES
+                        try:
+                            current_fg = widget.cget("fg_color")
+                            if current_fg != "transparent":
+                                widget.configure(fg_color=lighter_color)
+                        except:
+                            widget.configure(fg_color=lighter_color)
+
+                    # ✅ RECURSIVAMENTE VERIFICAR FILHOS
+                    if hasattr(widget, 'winfo_children'):
+                        for child in widget.winfo_children():
+                            update_frames_recursive(child)
+
+                except Exception as e:
+                    logger.debug(f"Erro ao atualizar frame: {e}")
+
+            # ✅ APLICAR A PARTIR DA JANELA PRINCIPAL
+            if hasattr(self, 'root'):
+                update_frames_recursive(self.root)
+
+            logger.info(f"🎨 Frames atualizados com cor: {lighter_color}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar frames: {e}")
+
+    def _update_all_buttons_with_darker_tone(self, darker_color: str, hover_color: str):
+        """Atualiza TODOS os botões com tom mais escuro"""
+        try:
+            def update_buttons_recursive(widget):
+                try:
+                    # ✅ SE É UM BOTÃO CTK, ATUALIZAR
+                    if isinstance(widget, ctk.CTkButton):
+                        button_text = str(widget.cget("text")).lower()
+                        # ✅ PULAR APENAS BOTÕES DE FECHAR
+                        if "fechar" not in button_text and "✅" not in button_text:
+                            widget.configure(
+                                fg_color=darker_color,
+                                hover_color=hover_color
+                            )
+
+                    # ✅ RECURSIVAMENTE VERIFICAR FILHOS
+                    if hasattr(widget, 'winfo_children'):
+                        for child in widget.winfo_children():
+                            update_buttons_recursive(child)
+
+                except Exception as e:
+                    logger.debug(f"Erro ao atualizar botão: {e}")
+
+            # ✅ APLICAR A PARTIR DA JANELA PRINCIPAL
+            if hasattr(self, 'root'):
+                update_buttons_recursive(self.root)
+
+            logger.info(f"🎨 Botões atualizados - Cor: {darker_color}, Hover: {hover_color}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar botões: {e}")
+
+    def _update_interactive_elements(self, darker_color: str):
+        """Atualiza checkboxes e comboboxes"""
+        try:
+            # ✅ CHECKBOXES
+            checkboxes = [
+                'enable_pricing_checkbox',
+                'send_email_checkbox',
+                'enable_exception_prazo_checkbox',
+                'apply_90_cents_checkbox'
+            ]
+
+            for checkbox_name in checkboxes:
+                if hasattr(self, checkbox_name):
+                    checkbox = getattr(self, checkbox_name)
+                    checkbox.configure(fg_color=darker_color)
+
+            # ✅ COMBOBOXES
+            comboboxes = [
+                'sheet_combobox',
+                'pricing_mode_combo'
+            ]
+
+            for combo_name in comboboxes:
+                if hasattr(self, combo_name):
+                    combo = getattr(self, combo_name)
+                    combo.configure(button_color=darker_color)
+
+            logger.info(f"🎨 Elementos interativos atualizados com cor: {darker_color}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar elementos interativos: {e}")
+
+    def _lighten_color(self, color_hex: str, factor: float = 0.9) -> str:
+        """Clareia uma cor"""
+        try:
+            # Remove o # se presente
+            color_hex = color_hex.lstrip('#')
+
+            # Converte para RGB
+            r = int(color_hex[0:2], 16)
+            g = int(color_hex[2:4], 16)
+            b = int(color_hex[4:6], 16)
+
+            # Clareia (move em direção ao branco)
+            r = int(r + (255 - r) * (1 - factor))
+            g = int(g + (255 - g) * (1 - factor))
+            b = int(b + (255 - b) * (1 - factor))
+
+            # Garante que não ultrapasse 255
+            r = min(255, r)
+            g = min(255, g)
+            b = min(255, b)
+
+            # Converte de volta para hex
+            return f"#{r:02x}{g:02x}{b:02x}"
+
+        except Exception:
+            return "#f0f0f0"  # Cor padrão clara em caso de erro
+
+    def _force_complete_interface_update(self):
+        """Força atualização COMPLETA da interface"""
+        try:
+            # ✅ MÚLTIPLAS ATUALIZAÇÕES PARA GARANTIR RENDERIZAÇÃO
+            self.root.update()
+            self.root.update_idletasks()
+
+            # ✅ PEQUENAS PAUSAS PARA GARANTIR RENDERIZAÇÃO COMPLETA
+            self.root.after(10, lambda: self.root.update_idletasks())
+            self.root.after(50, lambda: self.root.update())
+
+            logger.info("🎨 Interface completamente atualizada")
+
+        except Exception as e:
+            logger.debug(f"Erro ao forçar atualização completa: {e}")
+
+    def _update_all_buttons_recursive(self, color_hex: str):
+        """Busca e atualiza TODOS os botões da interface"""
+        try:
+            def update_widget_recursive(widget):
+                try:
+                    # ✅ SE É UM BOTÃO CTK, ATUALIZAR
+                    if isinstance(widget, ctk.CTkButton):
+                        # ✅ PULAR APENAS O BOTÃO DE FECHAR (SE EXISTIR)
+                        button_text = str(widget.cget("text")).lower()
+                        if "fechar" not in button_text and "✅" not in button_text:
+                            widget.configure(fg_color=color_hex)
+
+                    # ✅ RECURSIVAMENTE VERIFICAR FILHOS
+                    if hasattr(widget, 'winfo_children'):
+                        for child in widget.winfo_children():
+                            update_widget_recursive(child)
+
+                except Exception as e:
+                    # ✅ IGNORAR ERROS DE WIDGETS ESPECÍFICOS
+                    logger.debug(f"Erro ao atualizar widget: {e}")
+
+            # ✅ APLICAR A PARTIR DA JANELA PRINCIPAL
+            if hasattr(self, 'root'):
+                update_widget_recursive(self.root)
+
+            logger.info(f"🎨 Todos os botões atualizados com cor: {color_hex}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar botões recursivamente: {e}")
+
+    def _force_interface_update(self):
+        """Força atualização completa da interface"""
+        try:
+            self.root.update()
+            self.root.update_idletasks()
+
+            # ✅ PEQUENA PAUSA PARA GARANTIR RENDERIZAÇÃO
+            self.root.after(10, lambda: self.root.update_idletasks())
+
+        except Exception as e:
+            logger.debug(f"Erro ao forçar atualização: {e}")
+
+    def apply_font_color(self, color_hex: str):
+        """Aplica cor da fonte/texto"""
+        try:
+            logger.info(f"📝 Aplicando cor da fonte: {color_hex}")
+
+            # ✅ ATUALIZAR COR DOS TEXTOS PRINCIPAIS
+            def update_text_colors(widget):
+                try:
+                    if isinstance(widget, ctk.CTkLabel):
+                        widget.configure(text_color=color_hex)
+
+                    # Recursivamente verificar filhos
+                    if hasattr(widget, 'winfo_children'):
+                        for child in widget.winfo_children():
+                            update_text_colors(child)
+
+                except Exception:
+                    pass
+
+            # ✅ APLICAR A PARTIR DA JANELA PRINCIPAL
+            if hasattr(self, 'root'):
+                update_text_colors(self.root)
+
+            messagebox.showinfo("✅ Sucesso", f"Cor da fonte aplicada!\n\n📝 Cor: {color_hex}")
+
+        except Exception as e:
+            logger.error(f"Erro ao aplicar cor da fonte: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao aplicar cor da fonte:\n{e}")
+
+
+    def choose_custom_font_color(self):
+        """Escolher cor da fonte personalizada"""
+        try:
+            from tkinter import colorchooser
+
+            color = colorchooser.askcolor(
+                title="📝 Escolher Cor da Fonte",
+                color="#FFFFFF"
+            )
+
+            if color[1]:
+                self.apply_font_color(color[1])
+
+        except Exception as e:
+            logger.error(f"Erro ao escolher cor da fonte: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao escolher cor da fonte:\n{e}")
+
+    def reset_default_colors(self):
+        """Reseta para cores padrão"""
+        try:
+            result = messagebox.askyesno(
+                "🔄 Resetar Cores",
+                "Deseja resetar todas as cores para o padrão?"
+            )
+
+            if result:
+                # ✅ APLICAR CORES PADRÃO
+                self.apply_main_color("#1f538d")  # Azul padrão
+                self.apply_font_color("#FFFFFF")  # Branco padrão
+
+                messagebox.showinfo("✅ Sucesso", "Cores resetadas para o padrão!")
+
+        except Exception as e:
+            logger.error(f"Erro ao resetar cores: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao resetar cores:\n{e}")
+
+
+    def _update_all_interface_colors(self, color_hex: str):
+        """Atualiza TODAS as cores da interface INSTANTANEAMENTE (VERSÃO SEGURA)"""
+        try:
+            # ✅ 1. ATUALIZAR BOTÃO FLUTUANTE
+            if hasattr(self, 'color_palette_btn'):
+                self.color_palette_btn.configure(fg_color=color_hex)
+
+            # ✅ 2. ATUALIZAR BOTÃO PRINCIPAL DE PROCESSAMENTO (SEM TRAVAR)
+            if hasattr(self, 'process_button'):
+                current_state = self.process_button.cget("state")
+                self.process_button.configure(fg_color=color_hex)
+                self.process_button.configure(state=current_state)  # Manter estado
+
+            # ✅ 3. ATUALIZAR PROGRESS BAR
+            if hasattr(self, 'progress_bar'):
+                self.progress_bar.configure(progress_color=color_hex)
+
+
+            logger.info(f"🎨 Cores da interface atualizadas com segurança: {color_hex}")
+
+        except Exception as e:
+            logger.error(f"Erro ao atualizar cores da interface: {e}")
+
+
+
+    def choose_custom_main_color(self):
+        """Escolher cor principal personalizada"""
+        try:
+            from tkinter import colorchooser
+
+            color = colorchooser.askcolor(
+                title="🎨 Escolher Cor Principal",
+                color="#1f538d"
+            )
+
+            if color[1]:
+                self.apply_main_color(color[1])
+                # ✅ FORÇAR ATUALIZAÇÃO ADICIONAL
+                self._force_interface_update()
+
+        except Exception as e:
+            logger.error(f"Erro ao escolher cor principal: {e}")
+            messagebox.showerror("❌ Erro", f"Erro ao escolher cor:\n{e}")
+
+    def reset_default_colors(self):
+            """Reseta para cores padrão"""
+            try:
+                result = messagebox.askyesno(
+                    "🔄 Resetar Cores",
+                    "Deseja resetar todas as cores para o padrão?\n\nIsso irá aplicar o tema azul padrão."
+                )
+
+                if result:
+                    ctk.set_default_color_theme("blue")
+                    ctk.set_appearance_mode("dark")
+                    logger.info("✅ Cores resetadas para o padrão")
+                    messagebox.showinfo("✅ Sucesso", "Cores resetadas para o padrão!")
+
+            except Exception as e:
+                logger.error(f"Erro ao resetar cores: {e}")
+                messagebox.showerror("❌ Erro", f"Erro ao resetar cores:\n{e}")
+
+    def _update_interface_colors(self, color_hex: str):
+            """Atualiza cores da interface atual"""
+            try:
+                # ✅ ATUALIZAR BOTÃO FLUTUANTE
+                if hasattr(self, 'color_palette_btn'):
+                    self.color_palette_btn.configure(fg_color=color_hex)
+
+                logger.info(f"🎨 Interface atualizada com cor: {color_hex}")
+
+            except Exception as e:
+                logger.error(f"Erro ao atualizar interface: {e}")
+
+    def _darken_color(self, color_hex: str, factor: float = 0.8) -> str:
+            """Escurece uma cor para efeito hover"""
+            try:
+                # Remove o # se presente
+                color_hex = color_hex.lstrip('#')
+
+                # Converte para RGB
+                r = int(color_hex[0:2], 16)
+                g = int(color_hex[2:4], 16)
+                b = int(color_hex[4:6], 16)
+
+                # Escurece
+                r = int(r * factor)
+                g = int(g * factor)
+                b = int(b * factor)
+
+                # Converte de volta para hex
+                return f"#{r:02x}{g:02x}{b:02x}"
+
+            except Exception:
+                return "#1f538d"  # Cor padrão em caso de erro
 
     def refresh_sheet_list(self):
         """Atualiza lista de abas disponíveis"""
@@ -894,6 +1561,23 @@ class MainWindow:
         except Exception as e:
             logger.error(f"Erro ao auto-atualizar abas: {e}")
 
+    def select_file(self, var: tk.StringVar, title: str):
+        """Seleciona arquivo"""
+        file_path = filedialog.askopenfilename(
+            title=title,
+            filetypes=[
+                ("Excel files", "*.xlsx *.xls"),
+                ("All files", "*.*")
+            ]
+        )
+        if file_path:
+            var.set(file_path)
+
+            # ✅ AUTO-ATUALIZAR ABAS SE FOR ARQUIVO DE ORIGEM
+            if var == self.origin_file_var:
+                # ✅ USAR TIMER PARA EVITAR TRAVAMENTO DA UI
+                self.root.after(100, self.on_file_selected)
+
     def test_email_connection(self):
         """Testa conexão de e-mail"""
         try:
@@ -958,6 +1642,15 @@ class MainWindow:
             else:
                 self.config.email = None
 
+            # ✅ SALVAR NOVO PRAZO DE EXCEÇÃO
+            self.config.enable_exception_prazo = self.enable_exception_prazo_var.get()
+            try:
+                self.config.exception_prazo_days = int(self.exception_prazo_days_var.get())
+            except ValueError:
+                self.config.exception_prazo_days = 0
+                logger.warning(
+                    f"Valor inválido para prazo de exceção: '{self.exception_prazo_days_var.get()}', usando 0.")
+
             self.config.default_brand = self.brand_var.get() or "D'Rossi"
             save_config(self.config)
 
@@ -978,7 +1671,8 @@ class MainWindow:
 
         if self.enable_pricing_var.get():
             if not self.cost_file_var.get():
-                messagebox.showerror("Erro", "Selecione a planilha de custos ou desabilite a precificação automática")
+                messagebox.showerror("Erro",
+                                     "Selecione a planilha de custos ou desabilite a precificação automática")
                 return
 
             cost_file_path = Path(self.cost_file_var.get())
@@ -1021,10 +1715,22 @@ class MainWindow:
             logger.info(f"📋 Aba selecionada para processamento: '{sheet_name}'")
 
             # Configuração da marca e fornecedor
-            brand_name = self.brand_var.get() or "D'Rossi"
+            brand_name = self.brand_var.get() or "D'Rossi"  # ✅ DEFINIR BRAND_NAME PRIMEIRO
             self.config.default_brand = brand_name
 
-            supplier_code, official_brand_name = self.resolve_supplier_code(brand_name)
+            # ✅ ATUALIZAR CONFIGURAÇÃO COM OS VALORES DO PRAZO DE EXCEÇÃO
+            self.config.enable_exception_prazo = self.enable_exception_prazo_var.get()
+            try:
+                self.config.exception_prazo_days = int(self.exception_prazo_days_var.get())
+            except ValueError:
+                self.config.exception_prazo_days = 0
+                logger.warning(
+                    f"Valor inválido para prazo de exceção durante processamento: '{self.exception_prazo_days_var.get()}', usando 0.")
+
+            logger.info(
+                f"Configuração de exceção de prazo: Habilitado={self.config.enable_exception_prazo}, Dias={self.config.exception_prazo_days}")
+
+            supplier_code, official_brand_name = self.resolve_supplier_code(brand_name)  # ✅ AGORA FUNCIONA
             self.config.supplier_code = supplier_code
             self.config.default_brand = official_brand_name
 
@@ -1099,7 +1805,8 @@ class MainWindow:
 
             if not self.processing_cancelled:
                 # ✅ USAR VARIÁVEL LOCAL PARA EVITAR ERRO DE ESCOPO
-                self.root.after(0, lambda msg=error_msg: messagebox.showerror("Erro", f"Erro no processamento:\n{msg}"))
+                self.root.after(0, lambda msg=error_msg: messagebox.showerror("Erro",
+                                                                              f"Erro no processamento:\n{msg}"))
         finally:
             self.processing = False
             self.root.after(0, self.hide_progress_dialog)
@@ -1159,7 +1866,6 @@ class MainWindow:
         except Exception as e:
             logger.debug(f"Erro ao atualizar status: {e}")
 
-
     def show_result(self, result):
         """Mostra resultado do processamento"""
         if result.success:
@@ -1177,14 +1883,14 @@ class MainWindow:
                 f"📦 Kits processados: {result.total_kits}\n"
                 f"⚠️ Erros encontrados: {result.total_errors}\n"
                 f"⏱️ Tempo total: {result.processing_time:.2f}s\n"
-                f"📈 Taxa de sucesso: {result.success_rate*100:.1f}%\n\n"
+                f"📈 Taxa de sucesso: {result.success_rate * 100:.1f}%\n\n"
                 f"📁 Arquivo salvo em:\n{result.output_file}"
             )
             messagebox.showinfo("Sucesso!", message)
         else:
             error_msg = "\n".join(result.errors[:5])
             if len(result.errors) > 5:
-                error_msg += f"\n... e mais {len(result.errors)-5} erros"
+                error_msg += f"\n... e mais {len(result.errors) - 5} erros"
 
             messagebox.showerror(
                 "Erro no Processamento",
@@ -1192,228 +1898,11 @@ class MainWindow:
             )
 
     def show_logs(self):
-        """Mostra logs simples sem tempo real"""
+        """Mostra logs simples"""
         try:
-            # ✅ VERSÃO SIMPLES: Apenas mostra logs existentes
-            import os
-            from pathlib import Path
-
-            # Buscar arquivo de log
-            log_files = []
-            possible_log_paths = [
-                Path("logs") / "app.log",
-                Path("outputs") / "app.log",
-                Path("app.log"),
-                Path("cadastro_automatico.log")
-            ]
-
-            for log_path in possible_log_paths:
-                if log_path.exists():
-                    log_files.append(log_path)
-
-            if not log_files:
-                messagebox.showinfo("📋 Logs",
-                                    "Nenhum arquivo de log encontrado ainda.\n\nOs logs aparecerão após o primeiro processamento.")
-                return
-
-            # Usar o arquivo de log mais recente
-            log_file = max(log_files, key=lambda f: f.stat().st_mtime)
-
-            # ✅ JANELA SIMPLES PARA MOSTRAR LOGS
-            log_window = ctk.CTkToplevel(self.root)
-            log_window.title("📋 Logs do Sistema")
-            log_window.geometry("900x700")
-
-            # ✅ HEADER COM INFORMAÇÕES
-            header_frame = ctk.CTkFrame(log_window)
-            header_frame.pack(fill="x", padx=10, pady=(10, 5))
-
-            ctk.CTkLabel(
-                header_frame,
-                text=f"📁 Arquivo: {log_file.name}",
-                font=ctk.CTkFont(size=14, weight="bold")
-            ).pack(side="left", padx=10, pady=10)
-
-            # ✅ BOTÕES DE CONTROLE
-            buttons_frame = ctk.CTkFrame(header_frame, fg_color="transparent")
-            buttons_frame.pack(side="right", padx=10, pady=5)
-
-            refresh_btn = ctk.CTkButton(
-                buttons_frame,
-                text="🔄 Atualizar",
-                command=lambda: self.refresh_simple_logs(text_area, log_file, status_label),
-                width=100,
-                height=30
-            )
-            refresh_btn.pack(side="left", padx=5)
-
-            clear_btn = ctk.CTkButton(
-                buttons_frame,
-                text="🗑️ Limpar",
-                command=lambda: self.clear_simple_logs(text_area, status_label),
-                width=100,
-                height=30
-            )
-            clear_btn.pack(side="left", padx=5)
-
-            open_folder_btn = ctk.CTkButton(
-                buttons_frame,
-                text="📁 Abrir Pasta",
-                command=lambda: self.open_log_folder(log_file),
-                width=120,
-                height=30
-            )
-            open_folder_btn.pack(side="left", padx=5)
-
-            # ✅ STATUS
-            status_frame = ctk.CTkFrame(log_window)
-            status_frame.pack(fill="x", padx=10, pady=5)
-
-            status_label = ctk.CTkLabel(
-                status_frame,
-                text="📊 Carregando logs...",
-                font=ctk.CTkFont(size=12)
-            )
-            status_label.pack(side="left", padx=10, pady=5)
-
-            # ✅ ÁREA DE TEXTO SIMPLES
-            text_frame = ctk.CTkFrame(log_window)
-            text_frame.pack(fill="both", expand=True, padx=10, pady=(5, 10))
-
-            # Criar Text widget com scrollbar
-            text_area = tk.Text(
-                text_frame,
-                wrap=tk.WORD,
-                font=("Consolas", 10),
-                bg="#1a1a1a",
-                fg="#ffffff",
-                insertbackground="#ffffff",
-                selectbackground="#404040",
-                state='disabled'  # ✅ SOMENTE LEITURA
-            )
-
-            scrollbar = tk.Scrollbar(text_frame, command=text_area.yview)
-            text_area.config(yscrollcommand=scrollbar.set)
-
-            text_area.pack(side="left", fill="both", expand=True, padx=(10, 0), pady=10)
-            scrollbar.pack(side="right", fill="y", pady=10, padx=(0, 10))
-
-            # ✅ CONFIGURAR CORES PARA DIFERENTES NÍVEIS
-            text_area.tag_config("INFO", foreground="#00ff00")
-            text_area.tag_config("SUCCESS", foreground="#00ff00", font=("Consolas", 10, "bold"))
-            text_area.tag_config("WARNING", foreground="#ffff00")
-            text_area.tag_config("ERROR", foreground="#ff0000")
-            text_area.tag_config("DEBUG", foreground="#888888")
-            text_area.tag_config("CRITICAL", foreground="#ff0000", font=("Consolas", 10, "bold"))
-
-            # ✅ CARREGAR LOGS INICIALMENTE
-            self.load_simple_logs(text_area, log_file, status_label)
-
+            messagebox.showinfo("📋 Logs", "Funcionalidade de logs em desenvolvimento")
         except Exception as e:
             logger.error(f"Erro ao abrir logs: {e}")
-            messagebox.showerror("❌ Erro", f"Não foi possível abrir os logs:\n{e}")
-
-    def load_simple_logs(self, text_area, log_file, status_label):
-        """Carrega logs do arquivo"""
-        try:
-            # Ler arquivo de log
-            with open(log_file, 'r', encoding='utf-8') as f:
-                log_content = f.read()
-
-            if not log_content.strip():
-                log_content = "📝 Arquivo de log vazio.\n\nOs logs aparecerão após executar algum processamento."
-
-            # ✅ HABILITAR EDIÇÃO TEMPORARIAMENTE
-            text_area.config(state='normal')
-            text_area.delete('1.0', tk.END)
-
-            # ✅ INSERIR CONTEÚDO COM CORES
-            lines = log_content.split('\n')
-            for line in lines:
-                if not line.strip():
-                    text_area.insert(tk.END, '\n')
-                    continue
-
-                # ✅ DETECTAR NÍVEL DO LOG E APLICAR COR
-                if 'ERROR' in line or 'CRITICAL' in line:
-                    text_area.insert(tk.END, line + '\n', 'ERROR')
-                elif 'WARNING' in line:
-                    text_area.insert(tk.END, line + '\n', 'WARNING')
-                elif 'SUCCESS' in line or '✅' in line:
-                    text_area.insert(tk.END, line + '\n', 'SUCCESS')
-                elif 'DEBUG' in line:
-                    text_area.insert(tk.END, line + '\n', 'DEBUG')
-                else:
-                    text_area.insert(tk.END, line + '\n', 'INFO')
-
-            # ✅ VOLTAR PARA SOMENTE LEITURA
-            text_area.config(state='disabled')
-
-            # ✅ SCROLL PARA O FINAL
-            text_area.see(tk.END)
-
-            # ✅ ATUALIZAR STATUS (CORRIGIDO)
-            file_size = log_file.stat().st_size
-            line_count = len(lines)
-            last_modified = time.ctime(log_file.stat().st_mtime)  # ✅ AGORA FUNCIONA
-            status_label.configure(
-                text=f"📊 {line_count} linhas • {file_size} bytes • Última modificação: {last_modified}"
-            )
-
-        except Exception as e:
-            text_area.config(state='normal')
-            text_area.delete('1.0', tk.END)
-            text_area.insert('1.0', f"❌ Erro ao ler arquivo de log:\n{e}")
-            text_area.config(state='disabled')
-            status_label.configure(text="❌ Erro ao carregar logs")
-
-    def refresh_simple_logs(self, text_area, log_file, status_label):
-        """Atualiza logs sem travamento"""
-        try:
-            status_label.configure(text="🔄 Atualizando...")
-
-            # ✅ USAR AFTER PARA NÃO TRAVAR A UI
-            self.root.after(100, lambda: self.load_simple_logs(text_area, log_file, status_label))
-
-        except Exception as e:
-            messagebox.showerror("❌ Erro", f"Erro ao atualizar logs:\n{e}")
-
-    def clear_simple_logs(self, text_area, status_label):
-        """Limpa visualização dos logs"""
-        try:
-            result = messagebox.askyesno(
-                "🗑️ Limpar Logs",
-                "Deseja limpar a visualização dos logs?\n\n(O arquivo original não será alterado)"
-            )
-
-            if result:
-                text_area.config(state='normal')
-                text_area.delete('1.0', tk.END)
-                text_area.insert('1.0', "📝 Logs limpos.\n\nClique em 'Atualizar' para recarregar do arquivo.")
-                text_area.config(state='disabled')
-                status_label.configure(text="🗑️ Visualização limpa")
-
-        except Exception as e:
-            messagebox.showerror("❌ Erro", f"Erro ao limpar logs:\n{e}")
-
-    def open_log_folder(self, log_file):
-        """Abre pasta dos logs"""
-        try:
-            import os
-            import subprocess
-            import platform
-
-            log_folder = log_file.parent
-
-            if platform.system() == "Windows":
-                os.startfile(log_folder)
-            elif platform.system() == "Darwin":
-                subprocess.run(["open", log_folder])
-            else:
-                subprocess.run(["xdg-open", log_folder])
-
-        except Exception as e:
-            messagebox.showerror("❌ Erro", f"Não foi possível abrir a pasta:\n{e}")
 
     def open_output_folder(self):
         """Abre pasta de saída"""
@@ -1482,7 +1971,8 @@ class MainWindow:
             catalog_db_path = self.config.output_dir / "product_catalog.db"
 
             # Verificar se janela já existe
-            if hasattr(self, 'catalog_window') and self.catalog_window and hasattr(self.catalog_window, 'window') and self.catalog_window.window and self.catalog_window.window.winfo_exists():
+            if hasattr(self, 'catalog_window') and self.catalog_window and hasattr(self.catalog_window,
+                                                                                   'window') and self.catalog_window.window and self.catalog_window.window.winfo_exists():
                 self.catalog_window.show()
             else:
                 self.catalog_window = CatalogManagerWindow(self.root, catalog_db_path)
@@ -1492,120 +1982,85 @@ class MainWindow:
             messagebox.showerror("Erro", f"Não foi possível abrir o gerenciador:\n{e}")
 
     def show_costs_manager(self):
-        """Abre gerenciador de custos"""
-        try:
-            from .components.costs_manager_window import CostsManagerWindow
+            """Abre gerenciador de custos"""
+            try:
+                from .components.costs_manager_window import CostsManagerWindow
 
-            # Verificar se janela já existe
-            if hasattr(self, 'costs_window') and self.costs_window and hasattr(self.costs_window, 'window') and self.costs_window.window and self.costs_window.window.winfo_exists():
-                self.costs_window.show()
-            else:
-                self.costs_window = CostsManagerWindow(self.root)
+                # Verificar se janela já existe
+                if hasattr(self, 'costs_window') and self.costs_window and hasattr(self.costs_window,
+                                                                                   'window') and self.costs_window.window and self.costs_window.window.winfo_exists():
+                    self.costs_window.show()
+                else:
+                    self.costs_window = CostsManagerWindow(self.root)
 
-        except Exception as e:
-            logger.error(f"Erro ao abrir gerenciador de custos: {e}")
-            messagebox.showerror("Erro", f"Erro ao abrir gerenciador de custos:\n{e}")
+            except Exception as e:
+                logger.error(f"Erro ao abrir gerenciador de custos: {e}")
+                messagebox.showerror("Erro", f"Erro ao abrir gerenciador de custos:\n{e}")
 
     def resolve_supplier_code(self, brand_name: str) -> tuple[int, str]:
-        """
-        Resolve código e nome oficial do fornecedor baseado no nome da marca
-        Usa busca inteligente no banco de dados
+            """
+            Resolve código e nome oficial do fornecedor baseado no nome da marca
+            Usa busca inteligente no banco de dados
 
-        Returns:
-            tuple: (codigo_fornecedor, nome_oficial_fornecedor)
-        """
-        if not brand_name or not brand_name.strip():
-            logger.warning("Nome da marca vazio, usando código padrão")
-            return 0, "D'Rossi"
+            Returns:
+                tuple: (codigo_fornecedor, nome_oficial_fornecedor)
+            """
+            if not brand_name or not brand_name.strip():
+                logger.warning("Nome da marca vazio, usando código padrão")
+                return 0, "D'Rossi"
 
-        if not self.supplier_db:
-            logger.warning("Banco de fornecedores não disponível, usando código padrão")
-            return 0, brand_name
-
-        try:
-            supplier = self.supplier_db.search_supplier_by_name(brand_name)
-
-            if supplier:
-                logger.info(f"Fornecedor encontrado: '{brand_name}' → '{supplier.name}' (código: {supplier.code})")
-                return supplier.code, supplier.name
-            else:
-                logger.warning(f"Fornecedor não encontrado no banco: '{brand_name}' - usando código padrão (0)")
+            if not self.supplier_db:
+                logger.warning("Banco de fornecedores não disponível, usando código padrão")
                 return 0, brand_name
 
-        except Exception as e:
-            logger.error(f"Erro ao buscar fornecedor '{brand_name}': {e}")
-            return 0, brand_name
+            try:
+                supplier = self.supplier_db.search_supplier_by_name(brand_name)
 
+                if supplier:
+                    logger.info(f"Fornecedor encontrado: '{brand_name}' → '{supplier.name}' (código: {supplier.code})")
+                    return supplier.code, supplier.name
+                else:
+                    logger.warning(f"Fornecedor não encontrado no banco: '{brand_name}' - usando código padrão (0)")
+                    return 0, brand_name
+
+            except Exception as e:
+                logger.error(f"Erro ao buscar fornecedor '{brand_name}': {e}")
+                return 0, brand_name
 
     def run(self):
-        """Executa a aplicação"""
-        self.root.mainloop()
+            """Executa a aplicação"""
+            self.root.mainloop()
 
     def close_window_safely(self, window):
-        """Fecha janela com proteção contra erros"""
-        try:
-            if window and window.winfo_exists():
-                window.destroy()
-        except Exception as e:
-            logger.warning(f"⚠️ Erro ao fechar janela: {e}")
+            """Fecha janela com proteção contra erros"""
+            try:
+                if window and window.winfo_exists():
+                    window.destroy()
+            except Exception as e:
+                logger.warning(f"⚠️ Erro ao fechar janela: {e}")
 
     def safe_callback(self, callback_func, *args, **kwargs):
-        """Executa callback com proteção contra erros de janela"""
+            """Executa callback com proteção contra erros de janela"""
+            try:
+                if self.winfo_exists():  # Verifica se a janela ainda existe
+                    return callback_func(*args, **kwargs)
+            except Exception as e:
+                logger.error(f"❌ Erro em callback: {e}")
+                return None
+
+    def main(self):
+        """Função principal com tratamento de interrupção"""
         try:
-            if self.winfo_exists():  # Verifica se a janela ainda existe
-                return callback_func(*args, **kwargs)
+            app = MainWindow()
+            app.run()
+        except KeyboardInterrupt:
+            logger.info("🛑 Aplicação interrompida pelo usuário (Ctrl+C)")
+            print("\n🛑 Aplicação fechada pelo usuário")
         except Exception as e:
-            logger.error(f"❌ Erro em callback: {e}")
-            return None
+            logger.error(f"Erro fatal na aplicação: {e}")
+            messagebox.showerror("Erro Fatal", f"Erro ao iniciar aplicação:\n{e}")
+        finally:
+            print("👋 Aplicação finalizada")
 
-    def initialize_embedded_databases(self):
-        """Copia bancos embarcados para pasta de trabalho se não existirem"""
-        try:
-            # Pasta de destino dos bancos
-            db_output_dir = self.config.output_dir
-            db_output_dir.mkdir(parents=True, exist_ok=True)
-
-            # Lista de bancos para copiar
-            databases_to_copy = [
-                ("suppliers.db", "Fornecedores"),
-                ("DB_CATEGORIAS.json", "Categorias"),
-                ("product_catalog.db", "Catálogo")
-            ]
-
-            for db_file, db_name in databases_to_copy:
-                # Verificar se existe banco embarcado
-                import sys
-                if hasattr(sys, '_MEIPASS'):
-                    # Executável PyInstaller
-                    embedded_db = Path(sys._MEIPASS) / "databases" / db_file
-                else:
-                    # Desenvolvimento
-                    embedded_db = Path("outputs") / db_file
-
-                # Caminho de destino
-                target_db = db_output_dir / db_file
-
-                # Só copia se não existir
-                if embedded_db.exists() and not target_db.exists():
-                    import shutil
-                    shutil.copy2(embedded_db, target_db)
-                    logger.info(f"✅ Banco {db_name} copiado: {embedded_db} → {target_db}")
-                elif target_db.exists():
-                    logger.info(f"ℹ️ Banco {db_name} já existe: {target_db}")
-
-        except Exception as e:
-            logger.error(f"❌ Erro ao inicializar bancos embarcados: {e}")
-
-# ✅ FUNÇÃO MAIN FORA DA CLASSE (0 ESPAÇOS DE INDENTAÇÃO)
-def main():
-    """Função principal"""
-    try:
-        app = MainWindow()
-        app.run()
-    except Exception as e:
-        logger.error(f"Erro fatal na aplicação: {e}")
-        messagebox.showerror("Erro Fatal", f"Erro ao iniciar aplicação:\n{e}")
-
-# ✅ BLOCO IF FORA DA CLASSE (0 ESPAÇOS DE INDENTAÇÃO)
-if __name__ == "__main__":
-    main()
+    if __name__ == "__main__":
+        main()

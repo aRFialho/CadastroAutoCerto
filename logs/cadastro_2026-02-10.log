@@ -1,0 +1,110 @@
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:initialize_embedded_databases:165 - ℹ️ Banco Fornecedores já existe: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:initialize_embedded_databases:165 - ℹ️ Banco Categorias já existe: C:\Users\USER\Documents\cadastro_produtos_python\outputs\DB_CATEGORIAS.json
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:initialize_embedded_databases:165 - ℹ️ Banco Catálogo já existe: C:\Users\USER\Documents\cadastro_produtos_python\outputs\product_catalog.db
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:41 - 🗄️ === DEBUG BANCO DE FORNECEDORES ===
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:42 -   🎯 FORÇANDO caminho correto: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:43 -   📄 Arquivo existe: True
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:46 -   📏 Tamanho: 20480 bytes
+2026-02-10 15:42:54 | SUCCESS  | src.processors.business_logic:__init__:54 -   📊 Registros no banco correto: 58
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:54 - 🔍 Tabelas existentes no banco: ['suppliers', 'sqlite_sequence']
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:67 - 📋 Tabela 'suppliers': ['id', 'name', 'code', 'created_at', 'updated_at', 'prazo_dias'], Registros: 58
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:_init_database:144 - ✅ Banco inicializado! Total de fornecedores: 58
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:150 - 📋 Amostra de registros:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=1, Nome='A&B DESIGN', Código=1315, Prazo=10
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=2, Nome='AJL', Código=15, Prazo=10
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=3, Nome='MOVEIS ALBATROZ', Código=8, Prazo=0
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=4, Nome='AMBIENTARE', Código=928, Prazo=0
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=5, Nome='ARAMOVEIS', Código=1401, Prazo=5
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:_init_database:159 - 🎯 DMOV encontrado: ID=21, Nome='DMOV', Código=51, Prazo=2025-09-24 14:09:11
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:797 - 🔍 === DEBUG COMPLETO DO BANCO ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:798 - 📁 Arquivo: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:799 - 📏 Tamanho: 20480 bytes
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:804 - 📋 Todas as tabelas: ['suppliers', 'sqlite_sequence']
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:809 - 
+🔍 === TABELA: suppliers ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:814 - 📊 Colunas: [('id', 'INTEGER'), ('name', 'TEXT'), ('code', 'INTEGER'), ('created_at', 'TIMESTAMP'), ('updated_at', 'TIMESTAMP'), ('prazo_dias', 'INTEGER')]
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:819 - 📈 Total de registros: 58
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:825 - 📋 Amostra de dados:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   1. (1, 'A&B DESIGN', 1315, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 10)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   2. (2, 'AJL', 15, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 10)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   3. (3, 'MOVEIS ALBATROZ', 8, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 0)
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:debug_database_complete:835 - 🎯 DMOV ENCONTRADO na tabela suppliers:
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:debug_database_complete:837 -     (21, 'DMOV', 51, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 5)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:809 - 
+🔍 === TABELA: sqlite_sequence ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:814 - 📊 Colunas: [('name', ''), ('seq', '')]
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:819 - 📈 Total de registros: 1
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:825 - 📋 Amostra de dados:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   1. ('suppliers', 58)
+2026-02-10 15:42:54 | WARNING  | src.core.supplier_database:debug_database_complete:839 - ❌ DMOV não encontrado na tabela sqlite_sequence
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:__init__:44 - Banco de fornecedores inicializado: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:66 -   📊 Fornecedores carregados: 58
+2026-02-10 15:42:54 | SUCCESS  | src.processors.business_logic:__init__:69 -   ✅ Banco conectado com sucesso!
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:71 -     1. A&B DESIGN (Código: 1315, Prazo: 10)
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:71 -     2. AJL (Código: 15, Prazo: 10)
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:71 -     3. AMBIENTARE (Código: 928, Prazo: 0)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:search_supplier_by_name:324 - 🔍 === BUSCA DE FORNECEDOR ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:search_supplier_by_name:325 -   📝 Nome original: 'DMOV'
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:search_supplier_by_name:326 -   🔄 Nome normalizado: 'dmov'
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:search_supplier_by_name:335 -   📊 Total de fornecedores carregados: 58
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:search_supplier_by_name:341 -   ✅ BUSCA EXATA: 'DMOV' -> Código: 51, Prazo: 5
+2026-02-10 15:42:54 | SUCCESS  | src.processors.business_logic:__init__:76 -   🎯 DMOV encontrado: DMOV (Código: 51, Prazo: 5)
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:__init__:98 - ℹ️ Precificação automática desabilitada
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1953 - 🔍 === INICIALIZANDO CATEGORY MANAGER ===
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1968 - 🔍 Caminhos possíveis para DB_CATEGORIAS:
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   1. C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json - Existe: True
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   2. C:\Users\USER\Desktop\Planilhas\Não tirar daqui\Relação de Categorias.xlsx - Existe: True
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   3. C:\Users\USER\Documents\cadastro_produtos_python\outputs\DB_CATEGORIAS.json - Existe: True
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   4. C:\Users\USER\Documents\cadastro_produtos_python\outputs\categories.json - Existe: False
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   5. data\DB_CATEGORIAS.json - Existe: False
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1971 -   6. outputs\DB_CATEGORIAS.json - Existe: True
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1976 - ✅ Arquivo encontrado: C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1981 - 🔍 Tentando inicializar CategoryManager com senha...
+2026-02-10 15:42:54 | SUCCESS  | src.services.category_manager:load_categories:51 - ✅ 14 categorias carregadas de C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
+2026-02-10 15:42:54 | SUCCESS  | src.processors.business_logic:init_category_manager:1988 - ✅ CategoryManager inicializado com 14 categorias
+2026-02-10 15:42:54 | INFO     | src.processors.business_logic:init_category_manager:1991 - 🔍 Primeira categoria: ID=584, Nome='Área de Serviço'
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:54 - 🔍 Tabelas existentes no banco: ['suppliers', 'sqlite_sequence']
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:67 - 📋 Tabela 'suppliers': ['id', 'name', 'code', 'created_at', 'updated_at', 'prazo_dias'], Registros: 58
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:_init_database:144 - ✅ Banco inicializado! Total de fornecedores: 58
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:150 - 📋 Amostra de registros:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=1, Nome='A&B DESIGN', Código=1315, Prazo=10
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=2, Nome='AJL', Código=15, Prazo=10
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=3, Nome='MOVEIS ALBATROZ', Código=8, Prazo=0
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=4, Nome='AMBIENTARE', Código=928, Prazo=0
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:_init_database:152 -   - ID=5, Nome='ARAMOVEIS', Código=1401, Prazo=5
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:_init_database:159 - 🎯 DMOV encontrado: ID=21, Nome='DMOV', Código=51, Prazo=2025-09-24 14:09:11
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:797 - 🔍 === DEBUG COMPLETO DO BANCO ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:798 - 📁 Arquivo: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:799 - 📏 Tamanho: 20480 bytes
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:804 - 📋 Todas as tabelas: ['suppliers', 'sqlite_sequence']
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:809 - 
+🔍 === TABELA: suppliers ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:814 - 📊 Colunas: [('id', 'INTEGER'), ('name', 'TEXT'), ('code', 'INTEGER'), ('created_at', 'TIMESTAMP'), ('updated_at', 'TIMESTAMP'), ('prazo_dias', 'INTEGER')]
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:819 - 📈 Total de registros: 58
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:825 - 📋 Amostra de dados:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   1. (1, 'A&B DESIGN', 1315, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 10)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   2. (2, 'AJL', 15, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 10)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   3. (3, 'MOVEIS ALBATROZ', 8, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 0)
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:debug_database_complete:835 - 🎯 DMOV ENCONTRADO na tabela suppliers:
+2026-02-10 15:42:54 | SUCCESS  | src.core.supplier_database:debug_database_complete:837 -     (21, 'DMOV', 51, '2025-09-24 14:09:11', '2025-09-24 14:09:11', 5)
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:809 - 
+🔍 === TABELA: sqlite_sequence ===
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:814 - 📊 Colunas: [('name', ''), ('seq', '')]
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:819 - 📈 Total de registros: 1
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:825 - 📋 Amostra de dados:
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:debug_database_complete:827 -   1. ('suppliers', 58)
+2026-02-10 15:42:54 | WARNING  | src.core.supplier_database:debug_database_complete:839 - ❌ DMOV não encontrado na tabela sqlite_sequence
+2026-02-10 15:42:54 | INFO     | src.core.supplier_database:__init__:44 - Banco de fornecedores inicializado: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:initialize_supplier_database:116 - Banco já possui 58 fornecedores
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:__init__:72 - Banco de fornecedores inicializado: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-10 15:42:54 | SUCCESS  | src.services.category_manager:load_categories:51 - ✅ 14 categorias carregadas de C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
+2026-02-10 15:42:54 | INFO     | src.ui.main_window:__init__:87 - Gerenciador de categorias inicializado: C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
+2026-02-10 15:43:00 | INFO     | src.ui.main_window:apply_main_color:1080 - 🎨 Aplicando cor principal completa: #8B4513
+2026-02-10 15:43:00 | INFO     | src.ui.main_window:apply_main_color:1087 - 🎨 Tons calculados:
+2026-02-10 15:43:00 | INFO     | src.ui.main_window:apply_main_color:1088 -    Base (fundos): #8B4513
+2026-02-10 15:43:00 | INFO     | src.ui.main_window:apply_main_color:1089 -    Escuro (botões): #6f370f
+2026-02-10 15:43:00 | INFO     | src.ui.main_window:apply_main_color:1090 -    Claro (hover): #96572a
+2026-02-10 15:43:01 | INFO     | src.ui.main_window:_update_section_frames:1156 - 🎨 Frames atualizados com cor: #96572a
+2026-02-10 15:43:01 | INFO     | src.ui.main_window:_update_all_buttons_with_darker_tone:1188 - 🎨 Botões atualizados - Cor: #6f370f, Hover: #96572a
+2026-02-10 15:43:01 | INFO     | src.ui.main_window:_update_interactive_elements:1220 - 🎨 Elementos interativos atualizados com cor: #6f370f
+2026-02-10 15:43:01 | INFO     | src.ui.main_window:_force_complete_interface_update:1263 - 🎨 Interface completamente atualizada
