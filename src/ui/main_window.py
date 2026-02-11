@@ -5,7 +5,6 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import asyncio
 import threading
-import time  # ✅ ADICIONADO PARA OS LOGS
 from pathlib import Path
 from typing import Optional, List
 
@@ -218,12 +217,12 @@ class MainWindow:
                         try:
                             if window.window.winfo_exists():
                                 window.window.destroy()
-                        except:
+                        except Exception:
                             pass
                     elif window and hasattr(window, 'destroy'):
                         try:
                             window.destroy()
-                        except:
+                        except Exception:
                             pass
 
             if self.processing:
@@ -242,7 +241,7 @@ class MainWindow:
             try:
                 self.root.quit()
                 self.root.destroy()
-            except:
+            except Exception:
                 import sys
                 sys.exit(0)
 
@@ -1084,7 +1083,7 @@ class MainWindow:
             darker_color = self._darken_color(color_hex, 0.8)  # 20% mais escuro para botões
             lighter_color = self._lighten_color(color_hex, 0.9)  # 10% mais claro para hover
 
-            logger.info(f"🎨 Tons calculados:")
+            logger.info("🎨 Tons calculados:")
             logger.info(f"   Base (fundos): {base_color}")
             logger.info(f"   Escuro (botões): {darker_color}")
             logger.info(f"   Claro (hover): {lighter_color}")
@@ -1138,7 +1137,7 @@ class MainWindow:
                             current_fg = widget.cget("fg_color")
                             if current_fg != "transparent":
                                 widget.configure(fg_color=lighter_color)
-                        except:
+                        except Exception:
                             widget.configure(fg_color=lighter_color)
 
                     # ✅ RECURSIVAMENTE VERIFICAR FILHOS
@@ -1418,7 +1417,7 @@ class MainWindow:
             logger.error(f"Erro ao escolher cor principal: {e}")
             messagebox.showerror("❌ Erro", f"Erro ao escolher cor:\n{e}")
 
-    def reset_default_colors(self):
+    def reset_default_colors(self): # noqa: F811
             """Reseta para cores padrão"""
             try:
                 result = messagebox.askyesno(
@@ -1611,10 +1610,10 @@ class MainWindow:
                             "Erro",
                             "❌ Erro na conexão.\nVerifique as configurações de e-mail."
                         ))
-                except Exception as e:
+                except Exception:
                     self.root.after(0, lambda: messagebox.showerror(
                         "Erro",
-                        f"❌ Erro ao testar conexão:\n{str(e)}"
+                        f"❌ Erro ao testar conexão:\n{str(e)}" # noqa: F821
                     ))
 
             self.test_email_btn.configure(state="disabled", text="🔄 Testando...")
@@ -1734,7 +1733,7 @@ class MainWindow:
             self.config.supplier_code = supplier_code
             self.config.default_brand = official_brand_name
 
-            logger.info(f"Configuração de fornecedor:")
+            logger.info("Configuração de fornecedor:")
             logger.info(f"  - Nome informado: '{brand_name}'")
             logger.info(f"  - Nome oficial (banco): '{official_brand_name}'")
             logger.info(f"  - Código encontrado: {supplier_code}")
@@ -1758,7 +1757,7 @@ class MainWindow:
 
                 self.config.apply_90_cents_rule = self.apply_90_cents_var.get()
 
-                logger.info(f"Precificação automática habilitada:")
+                logger.info("Precificação automática habilitada:")
                 logger.info(f"  - Arquivo de custos: {self.config.cost_file_path}")
                 logger.info(f"  - Modo: {self.config.pricing_mode.value}")
                 logger.info(f"  - Regra 90 centavos: {self.config.apply_90_cents_rule}")
@@ -1829,7 +1828,7 @@ class MainWindow:
                 try:
                     if hasattr(self.progress_dialog, 'winfo_exists') and self.progress_dialog.winfo_exists():
                         self.progress_dialog.destroy()
-                except:
+                except Exception:
                     pass
                 finally:
                     self.progress_dialog = None

@@ -3,7 +3,6 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
-from pathlib import Path
 import logging
 import threading
 
@@ -281,7 +280,7 @@ class ProductsDashboard:
                     if cat_stats.get('por_tipo'):
                         principais_tipos = list(cat_stats['por_tipo'].items())[:3]
                         if principais_tipos:
-                            cat_text += f"\n\n🏷️ Principais tipos:\n"
+                            cat_text += "\n\n🏷️ Principais tipos:\n"
                             for tipo, count in principais_tipos:
                                 cat_text += f"• {tipo}: {count}\n"
 

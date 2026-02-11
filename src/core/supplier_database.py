@@ -147,7 +147,7 @@ class SupplierDatabase:
             if final_count > 0:
                 cursor.execute("SELECT id, name, code, prazo_dias FROM suppliers LIMIT 5")
                 sample_records = cursor.fetchall()
-                logger.info(f"📋 Amostra de registros:")
+                logger.info("📋 Amostra de registros:")
                 for record in sample_records:
                     logger.info(f"  - ID={record[0]}, Nome='{record[1]}', Código={record[2]}, Prazo={record[3]}")
 
@@ -321,7 +321,7 @@ class SupplierDatabase:
             # Normalizar nome de busca
             normalized_search = self._normalize_name(search_name)
 
-            logger.info(f"🔍 === BUSCA DE FORNECEDOR ===")
+            logger.info("🔍 === BUSCA DE FORNECEDOR ===")
             logger.info(f"  📝 Nome original: '{search_name}'")
             logger.info(f"  🔄 Nome normalizado: '{normalized_search}'")
 
@@ -397,7 +397,7 @@ class SupplierDatabase:
             logger.warning(f"  ❌ Nenhum fornecedor encontrado para: '{search_name}'")
 
             # Debug: Mostrar fornecedores disponíveis
-            logger.info(f"  📋 Primeiros 5 fornecedores disponíveis:")
+            logger.info("  📋 Primeiros 5 fornecedores disponíveis:")
             for i, supplier in enumerate(suppliers[:5]):
                 supplier_id, name, code, prazo_dias = supplier
                 logger.info(f"    {i + 1}. '{name}' (Código: {code}, Prazo: {prazo_dias} dias)")
@@ -564,7 +564,7 @@ class SupplierDatabase:
             # ✅ DETECTAR NOME DA ABA AUTOMATICAMENTE SE NÃO ESPECIFICADO
             if sheet_name is None:
                 # Tentar nomes comuns de abas
-                possible_names = ["Fornecedores", "Fornecedor", "Suppliers", "Supplier", "FORNECEDORES", "FORNECEDOR"]
+                possible_names = ["Fornecedores", "Fornecedor", "Suppliers", "Supplier", "FORNECEDORES", "FORNECEDOR"] # noqa: F841
 
                 # Ler todas as abas disponíveis
                 try:
@@ -604,7 +604,7 @@ class SupplierDatabase:
             # ✅ MAPEAR COLUNAS AUTOMATICAMENTE (VERSÃO CORRIGIDA)
             column_mapping = {}
 
-            logger.info(f"🔍 Iniciando mapeamento de colunas...")
+            logger.info("🔍 Iniciando mapeamento de colunas...")
 
             # ✅ MAPEAMENTO DIRETO PARA CASOS ESPECÍFICOS
             direct_mappings = {
@@ -675,14 +675,14 @@ class SupplierDatabase:
             logger.info(f"🗺️ Mapeamento final: {column_mapping}")
 
             # ✅ DEBUG: Mostrar primeiras linhas
-            logger.info(f"📋 Amostra dos dados:")
+            logger.info("📋 Amostra dos dados:")
             for i, row in df.head(2).iterrows():
                 logger.info(
                     f"  Linha {i + 2}: FORNECEDOR='{row.get('FORNECEDOR', 'N/A')}', Cód='{row.get('Cód', 'N/A')}', PRAZO='{row.get('PRAZO', 'N/A')}'")
 
             # Verificar se encontrou colunas essenciais
             if "nome" not in column_mapping or "codigo" not in column_mapping:
-                logger.error(f"❌ Colunas obrigatórias não encontradas!")
+                logger.error("❌ Colunas obrigatórias não encontradas!")
                 logger.error(f"   - Nome encontrado: {'nome' in column_mapping}")
                 logger.error(f"   - Código encontrado: {'codigo' in column_mapping}")
                 return 0, 1
@@ -740,7 +740,7 @@ class SupplierDatabase:
                     logger.warning(f"⚠️ Erro ao processar linha {index + 2}: {e}")
                     continue
 
-            logger.info(f"📊 Importação concluída:")
+            logger.info("📊 Importação concluída:")
             logger.info(f"  ✅ Novos: {success_count}")
             logger.info(f"  🔄 Atualizados: {updated_count}")
             logger.info(f"  ❌ Erros: {error_count}")
@@ -794,7 +794,7 @@ class SupplierDatabase:
                 with sqlite3.connect(self.db_path) as conn:
                     cursor = conn.cursor()
 
-                    logger.info(f"🔍 === DEBUG COMPLETO DO BANCO ===")
+                    logger.info("🔍 === DEBUG COMPLETO DO BANCO ===")
                     logger.info(f"📁 Arquivo: {self.db_path}")
                     logger.info(f"📏 Tamanho: {self.db_path.stat().st_size} bytes")
 
@@ -822,7 +822,7 @@ class SupplierDatabase:
                         if count > 0:
                             cursor.execute(f"SELECT * FROM {table_name} LIMIT 3")
                             sample_data = cursor.fetchall()
-                            logger.info(f"📋 Amostra de dados:")
+                            logger.info("📋 Amostra de dados:")
                             for i, row in enumerate(sample_data, 1):
                                 logger.info(f"  {i}. {row}")
 

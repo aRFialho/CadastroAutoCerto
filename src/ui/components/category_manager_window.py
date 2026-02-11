@@ -3,7 +3,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox, simpledialog
-from typing import Optional, List
+from typing import Optional
 import json
 
 from ...services.category_manager import CategoryManager

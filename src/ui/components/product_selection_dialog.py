@@ -1,9 +1,7 @@
 """Diálogo para seleção entre gerenciador de produtos e catálogo"""
 
 import customtkinter as ctk
-import tkinter as tk
 from tkinter import messagebox
-from pathlib import Path
 import logging
 
 logger = logging.getLogger(__name__)

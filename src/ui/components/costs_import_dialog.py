@@ -6,7 +6,6 @@ from tkinter import messagebox, filedialog
 from pathlib import Path
 import threading
 import logging
-from typing import Dict, Any, Optional
 
 from ...core.costs_database import CostsDatabase, FornecedorCustos
 from ...services.costs_importer import CostsImporter
@@ -339,7 +338,7 @@ class CostsImportDialog:
 """
 
             if preview['sample_data']:
-                preview_text += f"""
+                preview_text += """
 
 📋 AMOSTRA DOS PRIMEIROS PRODUTOS:
 """
@@ -519,7 +518,7 @@ class CostsImportDialog:
         try:
             if hasattr(self, 'progress_var'):
                 self.dialog.after(0, lambda: self.progress_var.set(value / 100))
-        except:
+        except Exception:
             pass
 
     def update_status(self, message: str):
@@ -527,7 +526,7 @@ class CostsImportDialog:
         try:
             if hasattr(self, 'status_var'):
                 self.dialog.after(0, lambda: self.status_var.set(message))
-        except:
+        except Exception:
             pass
 
     def import_completed(self, result):

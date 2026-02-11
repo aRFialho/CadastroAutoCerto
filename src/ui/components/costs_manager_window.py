@@ -3,12 +3,8 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-from pathlib import Path
-import threading
 import logging
-from typing import List, Optional, Dict, Any
 
-from src.core.costs_database import FornecedorCustos
 
 logger = logging.getLogger(__name__)
 

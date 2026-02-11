@@ -767,7 +767,7 @@ class ProductDatabase:
                     try:
                         self.add_combinacao(assento.id, pe_base.id, produto_id)
                         combinations_added += 1
-                    except:
+                    except Exception:
                         # Combinação já existe, ignorar
                         pass
 

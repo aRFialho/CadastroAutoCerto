@@ -2,13 +2,12 @@
 
 import pandas as pd
 from pathlib import Path
-import logging
-from typing import Dict, List, Optional, Any, Tuple
+from typing import Dict, List, Optional, Any
 import re
 from dataclasses import dataclass
 from datetime import datetime
 
-from ..core.costs_database import CostsDatabase, CustoProduto, FornecedorCustos
+from ..core.costs_database import CostsDatabase, CustoProduto
 from ..utils.logger import get_logger
 
 logger = get_logger("costs_importer")
@@ -327,14 +326,14 @@ class CostsImporter:
 
                 try:
                     return float(str_value) if str_value else 0.0
-                except:
+                except Exception:
                     return 0.0
 
             # Campos inteiros
             elif field_name in ["estoque"]:
                 try:
                     return int(float(str(value))) if str(value).strip() else 0
-                except:
+                except Exception:
                     return 0
 
             # Campos de texto

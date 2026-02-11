@@ -5,7 +5,6 @@ import tkinter as tk
 from tkinter import messagebox
 import logging
 from typing import Optional
-import json
 
 from ...core.costs_database import CostsDatabase, FornecedorCustos
 
@@ -285,7 +284,7 @@ class SupplierFormDialog:
                 if field_info['type'] == 'int':
                     try:
                         value = int(value) if value else 0
-                    except:
+                    except Exception:
                         value = 0
                 elif field_info['type'] == 'str':
                     value = str(value).strip() if value else ""

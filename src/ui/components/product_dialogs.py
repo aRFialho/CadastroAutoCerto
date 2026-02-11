@@ -3,7 +3,7 @@
 import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox
-from typing import Optional, Dict, List
+from typing import Optional, Dict
 import logging
 
 logger = logging.getLogger(__name__)
