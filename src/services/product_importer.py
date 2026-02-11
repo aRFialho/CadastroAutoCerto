@@ -1,11 +1,9 @@
 """Importador de dados da planilha de produtos - VERSÃO ATUALIZADA"""
 
 import pandas as pd
-import logging
 from pathlib import Path
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass
-import re
 
 from ..core.product_database import ProductDatabase
 from ..utils.logger import get_logger
@@ -717,7 +715,7 @@ class ProductImporter:
                 quantidade_str = str(row.iloc[cols.get('quantidade', 5)]).strip() if cols.get('quantidade', 5) < len(row) else "1"
                 try:
                     quantidade = int(float(quantidade_str)) if quantidade_str and quantidade_str.lower() not in ['nan', 'none', ''] else 1
-                except:
+                except Exception:
                     quantidade = 1
 
                 # Limpar valores 'nan'
@@ -772,7 +770,7 @@ class ProductImporter:
                 quantidade_str = str(row.iloc[cols.get('quantidade', 4)]).strip() if cols.get('quantidade', 4) < len(row) else "1"
                 try:
                     quantidade = int(float(quantidade_str)) if quantidade_str and quantidade_str.lower() not in ['nan', 'none', ''] else 1
-                except:
+                except Exception:
                     quantidade = 1
 
                 # Limpar valores 'nan'
@@ -852,7 +850,7 @@ class ProductImporter:
                 quantidade_str = str(row.iloc[cols.get('quantidade', 3)]).strip() if cols.get('quantidade', 3) < len(row) else "1"
                 try:
                     quantidade = int(float(quantidade_str)) if quantidade_str and quantidade_str.lower() not in ['nan', 'none', ''] else 1
-                except:
+                except Exception:
                     quantidade = 1
 
                 # Limpar valores 'nan'
@@ -962,7 +960,7 @@ class ProductImporter:
                 if total_combinations > 1000:
                     logger.warning(
                         f"⚠️ Produto '{produto.nome_aba}': {total_combinations} combinações possíveis - PULANDO geração automática")
-                    logger.warning(f"    Use o botão 'Gerar Combinações' na interface para este produto específico")
+                    logger.warning("    Use o botão 'Gerar Combinações' na interface para este produto específico")
                     continue
 
                 logger.info(f"📊 Produto '{produto.nome_aba}': Gerando {total_combinations} combinações...")

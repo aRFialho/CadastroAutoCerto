@@ -7,7 +7,7 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 from pathlib import Path
-from typing import List, Optional
+from typing import List
 from datetime import datetime
 
 from ..core.models import EmailConfig, ProcessingResult

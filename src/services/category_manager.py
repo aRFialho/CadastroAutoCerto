@@ -2,12 +2,11 @@
 
 import json
 from pathlib import Path
-from typing import List, Dict, Optional, Tuple, Any
+from typing import List, Dict, Optional, Tuple
 from datetime import datetime
 
 from ..core.models import CategoryItem
 from ..utils.logger import get_logger
-from ..core.exceptions import ValidationError
 
 logger = get_logger("category_manager")
 

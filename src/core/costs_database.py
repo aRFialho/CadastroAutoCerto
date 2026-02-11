@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -516,7 +515,7 @@ class CostsDatabase:
                 if data.get(field):
                     try:
                         data[field] = datetime.fromisoformat(data[field])
-                    except:
+                    except Exception:
                         data[field] = None
 
             return FornecedorCustos(**data)
@@ -536,7 +535,7 @@ class CostsDatabase:
                 if data.get(field):
                     try:
                         data[field] = datetime.fromisoformat(data[field])
-                    except:
+                    except Exception:
                         data[field] = None
 
             return CustoProduto(**data)

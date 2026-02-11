@@ -2,9 +2,7 @@
 
 import pandas as pd
 from pathlib import Path
-import logging
 from typing import Dict, List, Optional, Any
-import re
 from dataclasses import dataclass
 
 from ..core.product_catalog_database import ProductCatalogDatabase, ProdutoCatalogo

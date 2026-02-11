@@ -2,10 +2,9 @@
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import scrolledtext, messagebox
+from tkinter import messagebox
 import threading
 import queue
-import time
 from datetime import datetime
 from typing import Optional
 
@@ -259,7 +258,7 @@ class RealTimeLogViewer:
         try:
             if self.window and self.window.winfo_exists():
                 self.status_label.configure(text="⏹️ Captura de logs interrompida")
-        except:
+        except Exception:
             pass
 
     def force_close_window(self):
@@ -299,7 +298,7 @@ class RealTimeLogViewer:
             try:
                 if self.window:
                     self.window.destroy()
-            except:
+            except Exception:
                 pass
 
     def show(self):

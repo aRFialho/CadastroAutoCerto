@@ -1,7 +1,7 @@
 import polars as pl
 import openpyxl
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 from loguru import logger
 from ..core.models import ProductOrigin
 from ..core.exceptions import ExcelProcessingError
@@ -127,7 +127,7 @@ class ExcelReader:
                 original_columns = df_pandas.columns.tolist()
                 cleaned_columns = []
 
-                logger.info(f"🔍 === LIMPANDO NOMES DAS COLUNAS ===")
+                logger.info("🔍 === LIMPANDO NOMES DAS COLUNAS ===")
                 for i, col in enumerate(original_columns):
                     if col is None or pd.isna(col):
                         new_name = f"Coluna_Sem_Nome_{i + 1}"
@@ -223,7 +223,7 @@ class ExcelReader:
             with_color = [p for p in products if p.cor and str(p.cor).strip()]
             with_tipo_produto = [p for p in products if p.tipo_produto and str(p.tipo_produto).strip()]
 
-            logger.info(f"📊 Estatísticas:")
+            logger.info("📊 Estatísticas:")
             logger.info(f"  - Total produtos: {len(products)}")
             logger.info(f"  - Com CATEGORIA definida (LOJA WEB): {len(with_categoria)}")
             logger.info(f"  - Com CAT. definida (aba PRODUTO): {len(with_cat)}")
@@ -242,7 +242,7 @@ class ExcelReader:
 
             logger.success(f"✅ {len(products)} produtos carregados com sucesso")
             # ✅ ADICIONAR ANTES DO RETURN NO FINAL DO MÉTODO read_products
-            logger.info(f"📋 === DEBUG READER read_products ===")
+            logger.info("📋 === DEBUG READER read_products ===")
             logger.info(f"📊 Produtos finais sendo retornados: {len(products)}")
             logger.info(f"📊 Tipo da lista: {type(products)}")
             if products:
@@ -278,7 +278,7 @@ class ExcelReader:
         rename_dict = {}
 
         # 🔍 DEBUG: Mostra todas as colunas encontradas
-        logger.info(f"🔍 === COLUNAS DISPONÍVEIS NA PLANILHA DE ORIGEM ===")
+        logger.info("🔍 === COLUNAS DISPONÍVEIS NA PLANILHA DE ORIGEM ===")
         for i, col in enumerate(df.columns):
             logger.info(f"  {i + 1:2d}: '{col}'")
 
@@ -319,7 +319,7 @@ class ExcelReader:
 
         for col in df.columns:
             if col not in rename_dict:  # Se ainda não foi mapeada
-                col_normalized = self._normalize_column_name(col)
+                col_normalized = self._normalize_column_name(col) # noqa: F841
 
                 # ✅ BUSCA POR TIPO DE PRODUTO (PRIORIDADE MÁXIMA)
                 if "tipo_produto" not in mapped_fields and self._is_tipo_produto_column(col):
@@ -612,7 +612,7 @@ class ExcelReader:
             # ✅ 1. TRATAR EAN PRIMEIRO
             if "ean" in df.columns:
                 try:
-                    logger.info(f"🧹 Processando coluna EAN...")
+                    logger.info("🧹 Processando coluna EAN...")
                     logger.info(f"  Tipo atual: {df['ean'].dtype}")
 
                     # Verificar alguns valores
@@ -636,7 +636,7 @@ class ExcelReader:
             # ✅ 2. TRATAR CATEGORIA SEGUNDO (LOJA WEB)
             if "categoria" in df.columns:
                 try:
-                    logger.info(f"🧹 Processando coluna CATEGORIA (LOJA WEB)...")
+                    logger.info("🧹 Processando coluna CATEGORIA (LOJA WEB)...")
                     logger.info(f"  Tipo atual: {df['categoria'].dtype}")
 
                     # Verificar alguns valores
@@ -660,7 +660,7 @@ class ExcelReader:
             # ✅ 3. TRATAR CAT. (aba PRODUTO)
             if "cat" in df.columns:
                 try:
-                    logger.info(f"🧹 Processando coluna CAT. (aba PRODUTO)...")
+                    logger.info("🧹 Processando coluna CAT. (aba PRODUTO)...")
                     logger.info(f"  Tipo atual: {df['cat'].dtype}")
 
                     # Verificar alguns valores

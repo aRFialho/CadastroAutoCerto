@@ -4,12 +4,10 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox, ttk
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional
 import logging
-import threading
 
 from ...core.product_catalog_database import ProductCatalogDatabase, ProdutoCatalogo
-from .catalog_import_dialog import CatalogImportDialog
 
 logger = logging.getLogger(__name__)
 
@@ -639,7 +637,7 @@ class CatalogManagerWindow:
             self.items_per_page = int(value)
             self.current_page = 0
             self.load_data()
-        except:
+        except Exception:
             pass
 
     # AÇÕES
@@ -757,7 +755,7 @@ class CatalogManagerWindow:
 
         response = messagebox.askyesno(
             "Confirmar Exclusão",
-            f"Tem certeza que deseja excluir o produto:\n\n"
+            "Tem certeza que deseja excluir o produto:\n\n"
             "Esta ação não pode ser desfeita!"
         )
 

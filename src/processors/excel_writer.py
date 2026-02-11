@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import List
 import openpyxl
 from openpyxl.worksheet.worksheet import Worksheet
-from openpyxl.utils import get_column_letter
 from openpyxl.styles import PatternFill, Alignment, Font # Importar estilos
 
 from ..core.models import ProductDestination, VariationData, LojaWebData, KitData
@@ -194,7 +193,7 @@ class ExcelWriter:
             output_path.parent.mkdir(parents=True, exist_ok=True)
             wb.save(output_path)
             logger.success(f"✅ Arquivo salvo: {output_path}")
-            logger.success(f"🎨 Estilo aplicado: Cor de fundo #A9D08E, alinhamento à esquerda e FORMATO 'GERAL' para dados.")
+            logger.success("🎨 Estilo aplicado: Cor de fundo #A9D08E, alinhamento à esquerda e FORMATO 'GERAL' para dados.")
 
         except Exception as e:
             logger.error(f"Erro ao escrever Excel: {e}")
@@ -204,12 +203,12 @@ class ExcelWriter:
         """Escreve aba PRODUTO"""
         sheet_name = "PRODUTO"
 
-        print(f"\n📝 === DEBUG WRITER _write_produtos ===")
+        print("\n📝 === DEBUG WRITER _write_produtos ===")
         print(f"📊 Produtos recebidos: {len(produtos)}")
         print(f"📊 Tipo da lista: {type(produtos)}")
 
         if produtos:
-            print(f"✅ Primeiro produto:")
+            print("✅ Primeiro produto:")
             primeiro = produtos[0]
             print(f"  - EAN: {primeiro.ean}")
             print(f"  - Tipo: {type(primeiro)}")
@@ -220,7 +219,7 @@ class ExcelWriter:
         else:
             print("❌ LISTA DE PRODUTOS ESTÁ VAZIA NO WRITER!")
 
-        print(f"=" * 50)
+        print("=" * 50)
 
         if sheet_name not in wb.sheetnames:
             raise ExcelProcessingError(f"Aba '{sheet_name}' não encontrada no template")

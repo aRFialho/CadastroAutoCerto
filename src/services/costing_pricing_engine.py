@@ -3,7 +3,6 @@
 import pandas as pd
 import re
 import math
-import openpyxl  # Necessário para ler arquivos Excel
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
 from loguru import logger  # Usaremos loguru para consistência

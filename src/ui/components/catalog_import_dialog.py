@@ -6,7 +6,6 @@ from tkinter import messagebox, filedialog
 from pathlib import Path
 import threading
 import logging
-from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
@@ -277,7 +276,7 @@ class CatalogImportDialog:
 """
 
             if preview['sample_data']:
-                preview_text += f"""
+                preview_text += """
 
 📋 AMOSTRA DOS PRIMEIROS PRODUTOS:
 """
@@ -332,7 +331,7 @@ class CatalogImportDialog:
                 )
 
                 if validation["warnings"]:
-                    message += f"\n\n⚠️ Avisos:\n" + "\n".join(f"• {w}" for w in validation["warnings"])
+                    message += "\n\n⚠️ Avisos:\n" + "\n".join(f"• {w}" for w in validation["warnings"])
 
                 messagebox.showinfo("Validação", message)
             else:
@@ -340,7 +339,7 @@ class CatalogImportDialog:
                 message = f"❌ {error_msg}"
 
                 if validation.get("missing_columns"):
-                    message += f"\n\nColunas faltando:\n" + "\n".join(f"• {col}" for col in validation["missing_columns"])
+                    message += "\n\nColunas faltando:\n" + "\n".join(f"• {col}" for col in validation["missing_columns"])
 
                 messagebox.showerror("Validação", message)
 
@@ -451,7 +450,7 @@ class CatalogImportDialog:
         try:
             if hasattr(self, 'progress_var'):
                 self.dialog.after(0, lambda: self.progress_var.set(value / 100))
-        except:
+        except Exception:
             pass
 
     def update_status(self, message: str):
@@ -459,7 +458,7 @@ class CatalogImportDialog:
         try:
             if hasattr(self, 'status_var'):
                 self.dialog.after(0, lambda: self.status_var.set(message))
-        except:
+        except Exception:
             pass
 
     def import_completed(self, result):

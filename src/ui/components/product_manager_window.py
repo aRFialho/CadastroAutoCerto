@@ -4,10 +4,9 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import messagebox, ttk, filedialog
 from pathlib import Path
-from typing import Optional, List
 import logging
 
-from ...core.product_database import ProductDatabase, Produto, Assento, PeBase
+from ...core.product_database import ProductDatabase
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +44,7 @@ class ProductManagerWindow:
                 current_scaling = ctk.ScalingTracker.get_window_scaling()
                 if current_scaling == 0 or current_scaling is None:
                     ctk.set_window_scaling(1.0)
-            except:
+            except Exception:
                 ctk.set_window_scaling(1.0)
         except Exception as e:
             logger.warning(f"Erro ao configurar scaling: {e}")
@@ -1035,8 +1034,8 @@ class ProductManagerWindow:
                                 # Atualizar interface
                                 self.window.after(0, lambda: self.finish_generation(progress_dialog, combinations_added,
                                                                                     produto.id))
-                            except Exception as e:
-                                self.window.after(0, lambda: self.handle_generation_error(progress_dialog, e))
+                            except Exception:
+                                self.window.after(0, lambda: self.handle_generation_error(progress_dialog, e)) # noqa: F821
 
                         thread = threading.Thread(target=generate, daemon=True)
                         thread.start()
@@ -1246,7 +1245,7 @@ class ProductManagerWindow:
                 try:
                     self.import_dialog.destroy()
                     self.import_dialog = None
-                except:
+                except Exception:
                     pass
 
     def create_import_dialog(self):
@@ -1289,7 +1288,7 @@ class ProductManagerWindow:
         try:
             if hasattr(self, 'import_progress_var'):
                 self.window.after(0, lambda: self.import_progress_var.set(value))
-        except:
+        except Exception:
             pass
 
     def update_import_status(self, message: str):
@@ -1297,7 +1296,7 @@ class ProductManagerWindow:
         try:
             if hasattr(self, 'import_status_var'):
                 self.window.after(0, lambda: self.import_status_var.set(message))
-        except:
+        except Exception:
             pass
 
     def import_completed(self, result):
@@ -1365,7 +1364,7 @@ class ProductManagerWindow:
             try:
                 self.load_produtos()
                 self.update_stats()
-            except:
+            except Exception:
                 pass  # Ignorar erros de atualização
 
             messagebox.showerror("Erro na Importação", f"❌ Falha na importação:\n\n{error_msg}")
@@ -1375,7 +1374,7 @@ class ProductManagerWindow:
             # Último recurso: mostrar erro básico
             try:
                 messagebox.showerror("Erro Crítico", f"Erro crítico no sistema:\n{e}")
-            except:
+            except Exception:
                 pass
 
     def on_closing(self):

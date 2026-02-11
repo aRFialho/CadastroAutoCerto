@@ -2,11 +2,10 @@
 
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox
 from pathlib import Path
 import threading
 import logging
-from typing import Optional, Dict, Any, List
 import pandas as pd
 
 from ...core.costs_database import CostsDatabase, FornecedorCustos
@@ -714,7 +713,7 @@ Verifique se as colunas foram mapeadas corretamente."""
             return
 
         supplier_name = self.supplier_name_var.get().strip()
-        supplier_code = self.supplier_code_var.get().strip()
+        supplier_code = self.supplier_code_var.get().strip() # noqa: F841
 
         # Confirmar importação
         response = messagebox.askyesno(
@@ -754,7 +753,7 @@ Verifique se as colunas foram mapeadas corretamente."""
                         try:
                             code = int(supplier.codigo)
                             max_code = max(max_code, code)
-                        except:
+                        except Exception:
                             continue
                     supplier_code = str(max_code + 1)
 
@@ -842,7 +841,7 @@ Verifique se as colunas foram mapeadas corretamente."""
         try:
             if hasattr(self, 'progress_var'):
                 self.dialog.after(0, lambda: self.progress_var.set(value / 100))
-        except:
+        except Exception:
             pass
 
     def update_status(self, message: str):
@@ -850,7 +849,7 @@ Verifique se as colunas foram mapeadas corretamente."""
         try:
             if hasattr(self, 'status_var'):
                 self.dialog.after(0, lambda: self.status_var.set(message))
-        except:
+        except Exception:
             pass
 
     def import_completed(self, result, supplier_name):
@@ -903,7 +902,7 @@ Verifique se as colunas foram mapeadas corretamente."""
             current_index = tabs.index(current)
             if current_index > 0:
                 self.notebook.set(tabs[current_index - 1])
-        except:
+        except Exception:
             pass
 
     def next_tab(self):
@@ -915,7 +914,7 @@ Verifique se as colunas foram mapeadas corretamente."""
             current_index = tabs.index(current)
             if current_index < len(tabs) - 1:
                 self.notebook.set(tabs[current_index + 1])
-        except:
+        except Exception:
             pass
 
     def cancel(self):

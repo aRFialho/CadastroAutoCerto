@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import List, Optional, Dict, Any
 from dataclasses import dataclass
 from datetime import datetime
-import json
 
 logger = logging.getLogger(__name__)
 
@@ -87,7 +86,7 @@ class ProductCatalogDatabase:
 
             # ✅ OBTER COLUNAS ANTIGAS
             cursor.execute("PRAGMA table_info(produtos_catalogo)")
-            old_columns = [row[1] for row in cursor.fetchall()]
+            old_columns = [row[1] for row in cursor.fetchall()] # noqa: F841
 
             logger.info(f"Fazendo backup de {len(old_data)} registros...")
 
@@ -101,7 +100,7 @@ class ProductCatalogDatabase:
             if old_data:
                 logger.info("Migrando dados para nova estrutura...")
                 # Por enquanto, apenas log - você pode implementar migração específica se necessário
-                logger.warning(f"Dados antigos preservados na tabela 'produtos_catalogo_backup'")
+                logger.warning("Dados antigos preservados na tabela 'produtos_catalogo_backup'")
 
             logger.info("Migração concluída com sucesso!")
 
@@ -448,13 +447,13 @@ class ProductCatalogDatabase:
             if data.get('created_at'):
                 try:
                     data['created_at'] = datetime.fromisoformat(data['created_at'])
-                except:
+                except Exception:
                     data['created_at'] = None
 
             if data.get('updated_at'):
                 try:
                     data['updated_at'] = datetime.fromisoformat(data['updated_at'])
-                except:
+                except Exception:
                     data['updated_at'] = None
 
             # Criar objeto ProdutoCatalogo

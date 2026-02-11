@@ -1,7 +1,6 @@
 import os
 import json
 from pathlib import Path
-from typing import Optional
 from .models import AppConfig, EmailConfig
 from .exceptions import ConfigurationError
 
@@ -39,7 +38,7 @@ def load_config() -> AppConfig:
             raise ConfigurationError(f"Erro ao carregar configuração: {e}")
 
     # Sobrescreve com variáveis de ambiente se existirem
-    env_overrides = {}
+    env_overrides = {} # noqa: F841
 
     # E-mail
     if os.getenv('CADASTRO_EMAIL_USERNAME'):

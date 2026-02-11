@@ -26,7 +26,7 @@ def setup_paths():
         # Define diretório de trabalho
         os.chdir(app_dir)
 
-        print(f"🚀 Executável D'Rossi v2.1 iniciado!")
+        print("🚀 Executável D'Rossi v2.1 iniciado!")
         print(f"📁 Diretório de trabalho: {app_dir}")
         print(f"📁 Caminho da aplicação: {application_path}")
         print(f"📁 Caminho do src: {src_path}")
@@ -90,7 +90,7 @@ def main():
                     "Erro de Importação",
                     f"{error_msg}\n\nVerifique se todos os módulos estão instalados."
                 )
-            except:
+            except Exception:
                 input("Pressione Enter para sair...")
 
         sys.exit(1)
@@ -106,7 +106,7 @@ def main():
                 root = tk.Tk()
                 root.withdraw()
                 messagebox.showerror("Erro de Arquivo", error_msg)
-            except:
+            except Exception:
                 input("Pressione Enter para sair...")
 
         sys.exit(1)
@@ -129,7 +129,7 @@ def main():
                     "Erro Inesperado",
                     f"{error_msg}\n\nVerifique os logs para mais detalhes."
                 )
-            except:
+            except Exception:
                 input("Pressione Enter para sair...")
 
         sys.exit(1)

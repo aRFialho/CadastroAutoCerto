@@ -6,20 +6,17 @@ from datetime import datetime
 import re
 import math
 import html
-import json
-import pandas as pd
 import unicodedata
 
 from ..core.models import (
     ProductOrigin,
     ProductDestination, VariationData, LojaWebData, KitData,
-    ProcessingResult, AppConfig, PricingMode
+    ProcessingResult, AppConfig
 )
 from ..utils.logger import get_logger
 from .excel_reader import ExcelReader
 from .excel_writer import ExcelWriter
-from src.services.costing_pricing_engine import CostPricingEngine
-from ..core.supplier_database import SupplierDatabase, Supplier
+from ..core.supplier_database import SupplierDatabase
 
 logger = get_logger("business_logic")
 
@@ -38,7 +35,7 @@ class ProductProcessor:
         # ✅ FORÇAR O CAMINHO CORRETO DO BANCO COM DADOS
         supplier_db_path = Path("C:/Users/USER/Documents/cadastro_produtos_python/outputs/suppliers.db")
 
-        logger.info(f"🗄️ === DEBUG BANCO DE FORNECEDORES ===")
+        logger.info("🗄️ === DEBUG BANCO DE FORNECEDORES ===")
         logger.info(f"  🎯 FORÇANDO caminho correto: {supplier_db_path}")
         logger.info(f"  📄 Arquivo existe: {supplier_db_path.exists()}")
 
@@ -55,7 +52,7 @@ class ProductProcessor:
             except Exception as e:
                 logger.error(f"  ❌ Erro ao verificar dados: {e}")
         else:
-            logger.error(f"  ❌ BANCO CORRETO NÃO ENCONTRADO!")
+            logger.error("  ❌ BANCO CORRETO NÃO ENCONTRADO!")
 
         # ✅ INICIALIZAR BANCO COM CAMINHO CORRETO
         self.supplier_db = SupplierDatabase(supplier_db_path)
@@ -66,7 +63,7 @@ class ProductProcessor:
             logger.info(f"  📊 Fornecedores carregados: {len(test_suppliers)}")
 
             if len(test_suppliers) > 0:
-                logger.success(f"  ✅ Banco conectado com sucesso!")
+                logger.success("  ✅ Banco conectado com sucesso!")
                 for i, supplier in enumerate(test_suppliers[:3]):
                     logger.info(f"    {i + 1}. {supplier.name} (Código: {supplier.code}, Prazo: {supplier.prazo_dias})")
 
@@ -76,9 +73,9 @@ class ProductProcessor:
                     logger.success(
                         f"  🎯 DMOV encontrado: {dmov_test.name} (Código: {dmov_test.code}, Prazo: {dmov_test.prazo_dias})")
                 else:
-                    logger.warning(f"  ⚠️ DMOV não encontrado na busca")
+                    logger.warning("  ⚠️ DMOV não encontrado na busca")
             else:
-                logger.error(f"  ❌ BANCO AINDA VAZIO!")
+                logger.error("  ❌ BANCO AINDA VAZIO!")
 
         except Exception as e:
             logger.error(f"  ❌ Erro ao testar banco: {e}")
@@ -162,14 +159,14 @@ class ProductProcessor:
             a_str, l_str, p_str = m.group(1), m.group(2), m.group(3)
             try:
                 a = self._parse_number_pt(a_str)
-                l = self._parse_number_pt(l_str)
+                L = self._parse_number_pt(l_str)
                 p = self._parse_number_pt(p_str)
             except ValueError:
                 continue
             # A x L x P mapeados diretamente; não reordenamos
             caixas.append({
                 "altura_cm": a,
-                "largura_cm": l,
+                "largura_cm": L,
                 "profundidade_cm": p
             })
 
@@ -214,7 +211,7 @@ class ProductProcessor:
                             continue
 
         # ✅ ESTRATÉGIA 2: Busca geral se não encontrou na seção específica
-        logger.info(f"  🔍 Peso não encontrado em seção específica, buscando globalmente...")
+        logger.info("  🔍 Peso não encontrado em seção específica, buscando globalmente...")
 
         padroes_gerais = [
             r"Peso\s*total\s*(?:aproximado)?\s*[:\-]?\s*([\d\.,]+)\s*kg",
@@ -232,7 +229,7 @@ class ProductProcessor:
                 except ValueError:
                     continue
 
-        logger.warning(f"  ⚠️ Peso total não encontrado na descrição")
+        logger.warning("  ⚠️ Peso total não encontrado na descrição")
         return None
 
     def _round_value(self, value: float, metodo: str = "ceil", casas: int = 0) -> float:
@@ -270,11 +267,11 @@ class ProductProcessor:
         vtot_cm3 = 0.0
         detalhado = []
         for c in caixas:
-            a, l, p = c["altura_cm"], c["largura_cm"], c["profundidade_cm"]
-            v_cm3 = a * l * p
+            a, L, p = c["altura_cm"], c["largura_cm"], c["profundidade_cm"]
+            v_cm3 = a * L * p
             detalhado.append({
                 "altura_cm": a,
-                "largura_cm": l,
+                "largura_cm": L,
                 "comprimento_cm": p,
                 "volume_cm3": v_cm3,
                 "volume_m3": v_cm3 / 1_000_000.0
@@ -343,7 +340,7 @@ class ProductProcessor:
         logger.info(f"🔍 === PROCESSAMENTO AVANÇADO DE CUBAGEM - EAN: {ean} ===")
 
         if not descricao_html:
-            logger.info(f"  ℹ️ Sem descrição HTML - usando valores padrão")
+            logger.info("  ℹ️ Sem descrição HTML - usando valores padrão")
             return {
                 "altura_cm": 0.0,
                 "largura_cm": 0.0,
@@ -367,12 +364,12 @@ class ProductProcessor:
         if peso_total_kg:
             logger.success(f"  ⚖️ Peso total encontrado: {peso_total_kg} kg")
         else:
-            logger.warning(f"  ⚠️ Peso total não encontrado na descrição")
+            logger.warning("  ⚠️ Peso total não encontrado na descrição")
 
         # --- NOVA LÓGICA DE CUBAGEM CONDICIONAL: 1 VOLUME vs MÚLTIPLOS VOLUMES ---
         # Cenário 1: Apenas 1 volume e 1 caixa detectada, OU se não detectou qtde_volumes mas só achou 1 caixa.
         if (qtde_volumes is None or qtde_volumes == 1) and len(caixas) == 1:
-            logger.info(f"  📦 DETECTADO: APENAS 1 VOLUME OU 1 CAIXA NA DESCRIÇÃO. USANDO MEDIDAS DIRETAS DA CAIXA.")
+            logger.info("  📦 DETECTADO: APENAS 1 VOLUME OU 1 CAIXA NA DESCRIÇÃO. USANDO MEDIDAS DIRETAS DA CAIXA.")
             single_box = caixas[0]
             altura_final = single_box["altura_cm"]
             largura_final = single_box["largura_cm"]
@@ -389,13 +386,13 @@ class ProductProcessor:
             # Peso taxável é o maior entre o peso total e o peso cubado
             peso_taxavel_kg = max(peso_total_kg or 0.0, peso_cubado_kg)
 
-            logger.success(f"  🎯 CUBAGEM DIRETA CALCULADA COM SUCESSO (1 VOLUME):")
+            logger.success("  🎯 CUBAGEM DIRETA CALCULADA COM SUCESSO (1 VOLUME):")
             logger.success(f"    - Altura: {altura_final} cm")
             logger.success(f"    - Largura: {largura_final} cm")
             logger.success(f"    - Comprimento: {comprimento_final} cm")
             logger.success(f"    - Peso cubado: {peso_cubado_kg:.2f} kg")
             logger.success(f"    - Peso taxável: {peso_taxavel_kg:.2f} kg")
-            logger.success(f"    - Qtde Volume: 1")
+            logger.success("    - Qtde Volume: 1")
 
             return {
                 "altura_cm": altura_final,
@@ -420,7 +417,7 @@ class ProductProcessor:
 
         # Cenário 2: Nenhuma caixa detectada. Retorna valores padrão (0s).
         if not caixas:
-            logger.warning(f"  ⚠️ Nenhuma caixa encontrada na descrição. Retornando valores padrão.")
+            logger.warning("  ⚠️ Nenhuma caixa encontrada na descrição. Retornando valores padrão.")
             return {
                 "altura_cm": 0.0,
                 "largura_cm": 0.0,
@@ -465,7 +462,7 @@ class ProductProcessor:
             else:
                 peso_taxavel_kg = peso_cubado_kg
 
-            logger.success(f"  🎯 CUBAGEM CONSOLIDADA CALCULADA COM SUCESSO:")
+            logger.success("  🎯 CUBAGEM CONSOLIDADA CALCULADA COM SUCESSO:")
             logger.success(f"    - Volume total: {consolidado['volume_total_m3']:.6f} m³")
             logger.success(f"    - Seção quadrada: {consolidado['secao_quadrada_cm']:.2f} cm")
             logger.success(f"    - Altura final: {consolidado['altura_cm']} cm")
@@ -515,7 +512,7 @@ class ProductProcessor:
         """
         text = self._strip_html_tags(descricao_html)
 
-        logger.info(f"     === DETECÇÃO INTELIGENTE DE VOLUMES ===")
+        logger.info("     === DETECÇÃO INTELIGENTE DE VOLUMES ===")
 
         # ✅ ESTRATÉGIA 1: Buscar declaração explícita
         padroes_declaracao = [
@@ -562,7 +559,7 @@ class ProductProcessor:
             logger.info(f"    📋 Usando quantidade DECLARADA: {quantidade_declarada}")
             return quantidade_declarada
         else:
-            logger.info(f"    ❌ Nenhuma quantidade encontrada")
+            logger.info("    ❌ Nenhuma quantidade encontrada")
             return None
 
     # ===========================
@@ -615,9 +612,9 @@ class ProductProcessor:
                 try:
                     cost_loaded = self.cost_pricing_engine.load_base_data(self.config.cost_file_path)
                     if cost_loaded:
-                        logger.success(f"✅ Dados de custo carregados com sucesso")
+                        logger.success("✅ Dados de custo carregados com sucesso")
                     else:
-                        logger.warning(f"⚠️ Falha ao carregar dados de custo - precificação será pulada")
+                        logger.warning("⚠️ Falha ao carregar dados de custo - precificação será pulada")
                         self.cost_pricing_engine = None
                 except Exception as e:
                     logger.error(f"❌ Erro ao carregar dados de custo: {e}")
@@ -812,7 +809,7 @@ class ProductProcessor:
                 produtos_dest.append(produto_separador)
                 logger.info(f"⚪ Separador inserido após grupo {grupo_num}")
 
-        logger.info(f"📊 === RESULTADO FINAL ===")
+        logger.info("📊 === RESULTADO FINAL ===")
         logger.info(f"  📦 Total de grupos processados: {len(grupos)}")
         logger.info(f"  📋 Total de linhas na aba PRODUTO: {len(produtos_dest)}")
         logger.info(f"  ⚪ Separadores inseridos: {len(grupos) - 1}")
@@ -922,7 +919,7 @@ class ProductProcessor:
                 fonte_qtde = "fallback"
 
             # 7. Determinar código do tipo produto
-            logger.info(f"  🏷️ === DETERMINANDO CÓDIGO DO TIPO PRODUTO ===")
+            logger.info("  🏷️ === DETERMINANDO CÓDIGO DO TIPO PRODUTO ===")
             logger.info(f"    - Tipo original: '{product.tipo_produto}'")
             logger.info(f"    - Precificação automática: {self.config.enable_auto_pricing}")
             logger.info(
@@ -1001,9 +998,9 @@ class ProductProcessor:
                                 preco_de_venda = self.cost_pricing_engine.apply_90_cents_rule(preco_de_venda)
                             if preco_promocao > 0:
                                 preco_promocao = self.cost_pricing_engine.apply_90_cents_rule(preco_promocao)
-                            logger.info(f"    - Regra dos 90 centavos aplicada")
+                            logger.info("    - Regra dos 90 centavos aplicada")
 
-                        logger.success(f"  💰 PRECIFICAÇÃO REALIZADA COM SUCESSO!")
+                        logger.success("  💰 PRECIFICAÇÃO REALIZADA COM SUCESSO!")
                         logger.success(f"    - Custo Total: R$ {vr_custo_total:.2f}")
                         logger.success(f"    - Custo Frete: R$ {custo_frete:.2f}")
                         logger.success(f"    - Custo IPI: R$ {custo_ipi:.2f}")
@@ -1012,7 +1009,7 @@ class ProductProcessor:
                         logger.success(f"    - Detalhes: {pricing_result['detail']}")
 
                     else:
-                        logger.warning(f"  ⚠️ PRECIFICAÇÃO NÃO ENCONTRADA")
+                        logger.warning("  ⚠️ PRECIFICAÇÃO NÃO ENCONTRADA")
                         logger.warning(f"    - Código: '{product.cod_fornecedor}'")
                         logger.warning(f"    - Motivo: {pricing_result['detail']}")
 
@@ -1022,7 +1019,7 @@ class ProductProcessor:
             elif self.cost_pricing_engine and not product.cod_fornecedor:
                 logger.warning(f"  ⚠️ Precificação pulada: Código fornecedor vazio para EAN {product.ean}")
             elif not self.cost_pricing_engine:
-                logger.debug(f"  ℹ️ Precificação automática desabilitada")
+                logger.debug("  ℹ️ Precificação automática desabilitada")
 
             # ✅ NOVO: VERIFICAÇÃO DE PRAZO DE EXCEÇÃO
             dias_entrega_final = 0
@@ -1043,13 +1040,13 @@ class ProductProcessor:
 
                 # 🔍 BUSCAR FORNECEDOR NO BANCO PARA OBTER PRAZO
                 if self.config.default_brand:
-                    logger.info(f"🔍 === BUSCANDO FORNECEDOR NO BANCO ===")
+                    logger.info("🔍 === BUSCANDO FORNECEDOR NO BANCO ===")
                     logger.info(f"  🏷️ Marca padrão: '{self.config.default_brand}'")
 
                     supplier = self.supplier_db.search_supplier_by_name(self.config.default_brand)
 
                     if supplier:
-                        logger.success(f"  ✅ Fornecedor encontrado no banco!")
+                        logger.success("  ✅ Fornecedor encontrado no banco!")
                         logger.success(f"    - Nome: {supplier.name}")
                         logger.success(f"    - Código: {supplier.code}")
                         logger.success(f"    - Prazo base: {supplier.prazo_dias} dias")
@@ -1084,7 +1081,7 @@ class ProductProcessor:
                             site_disponibilidade_final = prazo_final
                     else:
                         logger.warning(f"  ⚠️ Fornecedor '{self.config.default_brand}' não encontrado no banco")
-                        logger.warning(f"  🔧 Usando configuração padrão")
+                        logger.warning("  🔧 Usando configuração padrão")
 
                         # ✅ MESMO SEM FORNECEDOR NO BANCO, VERIFICAR ESPECIAIS DMOV
                         prazo_default = product.prazo or 0
@@ -1092,7 +1089,7 @@ class ProductProcessor:
                         dias_entrega_final = prazo_final
                         site_disponibilidade_final = prazo_final
 
-                logger.info(f"  📊 === RESULTADO FINAL ===")
+                logger.info("  📊 === RESULTADO FINAL ===")
                 logger.info(f"  📊 FORNECEDOR FINAL: '{fornecedor_final}'")
                 logger.info(f"  ⏱️ PRAZO FINAL: {dias_entrega_final} dias")
                 logger.info(f"  🌐 SITE DISPONIBILIDADE: {site_disponibilidade_final} dias")
@@ -1151,11 +1148,11 @@ class ProductProcessor:
 
             # ✅ LOG FINAL DO PRODUTO
             logger.info(f"🔍 === PRODUTO FINAL - EAN: {produto_dest.ean} ===")
-            logger.info(f"  📊 VALORES FINAIS:")
+            logger.info("  📊 VALORES FINAIS:")
             logger.info(f"    - fornecedor: '{produto_dest.fornecedor}'")
             logger.info(f"    - dias_entrega: {produto_dest.dias_entrega}")
             logger.info(f"    - site_disponibilidade: {produto_dest.site_disponibilidade}")
-            logger.success(f"  ✅ Produto processado com sucesso!")
+            logger.success("  ✅ Produto processado com sucesso!")
 
             return produto_dest
 
@@ -1189,7 +1186,7 @@ class ProductProcessor:
                 desc_parts.append(complemento_base)
             if anuncio_limpo:
                 desc_parts.append(anuncio_limpo)
-            logger.info(f"  🔵 PRODUTO PAI: Complemento + Anúncio (sem cor)")
+            logger.info("  🔵 PRODUTO PAI: Complemento + Anúncio (sem cor)")
 
         elif tipo_lower in ["variação", "variacao"]:
             # VARIAÇÃO: Complemento + Anúncio + Cor (cor vem APÓS o anúncio)
@@ -1199,7 +1196,7 @@ class ProductProcessor:
                 desc_parts.append(anuncio_limpo)
             if cor_normalizada:
                 desc_parts.append(cor_normalizada)
-            logger.info(f"  🟡 PRODUTO VARIAÇÃO: Complemento + Anúncio + Cor")
+            logger.info("  🟡 PRODUTO VARIAÇÃO: Complemento + Anúncio + Cor")
 
         elif tipo_lower in ["unitário", "unitario"]:
             # UNITÁRIO: Complemento + Cor + Anúncio (cor vem ANTES do anúncio)
@@ -1209,7 +1206,7 @@ class ProductProcessor:
                 desc_parts.append(cor_normalizada)
             if anuncio_limpo:
                 desc_parts.append(anuncio_limpo)
-            logger.info(f"  🟢 PRODUTO UNITÁRIO: Complemento + Cor + Anúncio")
+            logger.info("  🟢 PRODUTO UNITÁRIO: Complemento + Cor + Anúncio")
 
         else:
             # TIPO DESCONHECIDO: Usar lógica de unitário como fallback
@@ -1246,7 +1243,7 @@ class ProductProcessor:
         if tipo_lower == "pai":
             # PAI: Apenas o complemento base (sem cor)
             resultado = complemento_base
-            logger.info(f"  🔵 PRODUTO PAI: Complemento mantido sem cor")
+            logger.info("  🔵 PRODUTO PAI: Complemento mantido sem cor")
 
         elif tipo_lower in ["variação", "variacao"]:
             # VARIAÇÃO: Complemento + " - " + Cor
@@ -1258,7 +1255,7 @@ class ProductProcessor:
                 resultado = f" - {cor_normalizada}"  # Se não tem complemento, só a cor com separador
             else:
                 resultado = ""  # Se não tem nenhum dos dois
-            logger.info(f"  🟡 PRODUTO VARIAÇÃO: Complemento + ' - ' + Cor")
+            logger.info("  🟡 PRODUTO VARIAÇÃO: Complemento + ' - ' + Cor")
 
         elif tipo_lower in ["unitário", "unitario"]:
             # UNITÁRIO: Complemento + " " + Cor
@@ -1270,7 +1267,7 @@ class ProductProcessor:
                 resultado = cor_normalizada  # Se não tem complemento, só a cor
             else:
                 resultado = ""  # Se não tem nenhum dos dois
-            logger.info(f"  🟢 PRODUTO UNITÁRIO: Complemento + ' ' + Cor")
+            logger.info("  🟢 PRODUTO UNITÁRIO: Complemento + ' ' + Cor")
 
         else:
             # TIPO DESCONHECIDO: Usar lógica de unitário como fallback
@@ -1298,7 +1295,7 @@ class ProductProcessor:
 
         if tipo_lower == "pai":
             # PRODUTO PAI: Cor deve ficar VAZIA (sem cor no produto PAI)
-            logger.info(f"  🔵 PRODUTO PAI: Cor será REMOVIDA (fica vazia)")
+            logger.info("  🔵 PRODUTO PAI: Cor será REMOVIDA (fica vazia)")
             return ""
         elif tipo_lower in ["variação", "variacao", "unitário", "unitario"]:
             # PRODUTO VARIAÇÃO/UNITÁRIO: Cor é NORMALIZADA e MANTIDA
@@ -1342,7 +1339,7 @@ class ProductProcessor:
             return desc_final
         else:
             # PRODUTOS UNITÁRIOS: Substitui (cor) pela cor real
-            logger.info(f"  🟢 PRODUTO UNITÁRIO: Substituindo (cor) pela cor real...")
+            logger.info("  🟢 PRODUTO UNITÁRIO: Substituindo (cor) pela cor real...")
             return self._substituir_cor_unitario(desc_str, cor, ean)
 
     def _remover_expressoes_cor(self, desc_html: str, ean: str) -> str:
@@ -1381,13 +1378,13 @@ class ProductProcessor:
         desc_processada = desc_processada.strip()
 
         if expressoes_removidas:
-            logger.success(f"  🎯 EXPRESSÕES REMOVIDAS COM SUCESSO!")
+            logger.success("  🎯 EXPRESSÕES REMOVIDAS COM SUCESSO!")
             logger.success(f"    - EAN: {ean}")
             logger.success(f"    - Expressões removidas: {expressoes_removidas}")
             logger.success(f"    - ANTES: '{desc_original}'")
             logger.success(f"    - DEPOIS: '{desc_processada}'")
         else:
-            logger.info(f"  📝 Nenhuma expressão de cor encontrada para remover")
+            logger.info("  📝 Nenhuma expressão de cor encontrada para remover")
             logger.info(f"    - Descrição mantida: '{desc_processada}'")
 
         return desc_processada
@@ -1414,10 +1411,10 @@ class ProductProcessor:
             ocorrencias = padrao_cor.findall(desc_html)
 
             if ocorrencias:
-                logger.error(f"  🚨 PROBLEMA: Descrição tem '(cor)' mas coluna 'Cor do Produto' está vazia!")
+                logger.error("  🚨 PROBLEMA: Descrição tem '(cor)' mas coluna 'Cor do Produto' está vazia!")
                 logger.error(f"    - EAN: {ean}")
                 logger.error(f"    - Ocorrências: {ocorrencias}")
-                logger.error(f"    - Descrição será mantida SEM substituição!")
+                logger.error("    - Descrição será mantida SEM substituição!")
 
             return desc_html
 
@@ -1436,7 +1433,7 @@ class ProductProcessor:
             # Faz a substituição
             desc_final = padrao_cor.sub(cor_normalizada, desc_html)
 
-            logger.success(f"  🎯 SUBSTITUIÇÃO REALIZADA COM SUCESSO!")
+            logger.success("  🎯 SUBSTITUIÇÃO REALIZADA COM SUCESSO!")
             logger.success(f"    - EAN: {ean}")
             logger.success(f"    - Ocorrências substituídas: {total_ocorrencias}")
             logger.success(f"    - Cor usada: '{cor_normalizada}'")
@@ -1445,7 +1442,7 @@ class ProductProcessor:
 
             return desc_final
         else:
-            logger.info(f"  📝 Nenhuma ocorrência de '(cor)' encontrada na descrição")
+            logger.info("  📝 Nenhuma ocorrência de '(cor)' encontrada na descrição")
             return desc_html
 
     def _get_tipo_produto_code(self, tipo_produto: Optional[str]) -> str:
@@ -1493,16 +1490,16 @@ class ProductProcessor:
         if (self.config.enable_auto_pricing and
                 self.config.pricing_mode and
                 self.config.pricing_mode.value == "Fábrica"):
-            logger.info(f"  🏭 Modo Fábrica detectado via precificação automática")
+            logger.info("  🏭 Modo Fábrica detectado via precificação automática")
             return True
 
         # ✅ CONDIÇÃO 2: Marca padrão é DMOV
         if (self.config.default_brand and
                 self.config.default_brand.lower().strip() == "dmov"):
-            logger.info(f"  🏭 Modo Fábrica detectado via marca padrão DMOV")
+            logger.info("  🏭 Modo Fábrica detectado via marca padrão DMOV")
             return True
 
-        logger.info(f"  🏪 Modo Fornecedor ativo")
+        logger.info("  🏪 Modo Fornecedor ativo")
         return False
 
     def _process_variacoes(self, products: List[ProductOrigin], parents_for_variacao_only: Dict[str, ProductOrigin]) -> \
@@ -1576,7 +1573,7 @@ class ProductProcessor:
                     variacoes.append(variacao)
                     variacoes_processadas += 1
 
-                    logger.success(f"  🎯 VARIAÇÃO CRIADA COM SUCESSO!")
+                    logger.success("  🎯 VARIAÇÃO CRIADA COM SUCESSO!")
                     logger.success(f"    - COMPLEMENTO: '{complemento_variacao}'")
                     logger.success(f"    - EAN_PAI: {ean_pai_encontrado}")
                     logger.success(f"    - EAN_FILHO: {product.ean}")
@@ -1585,7 +1582,7 @@ class ProductProcessor:
                     variacoes_sem_pai += 1
                     logger.error(f"  ❌ PAI NÃO ENCONTRADO para variação: {product.ean}")
 
-        logger.info(f"📊 === RESULTADO FINAL DO PROCESSAMENTO DE VARIAÇÕES ===")
+        logger.info("📊 === RESULTADO FINAL DO PROCESSAMENTO DE VARIAÇÕES ===")
         logger.info(f"  ✅ Variações processadas com sucesso: {variacoes_processadas}")
         logger.info(f"  ❌ Variações sem PAI encontrado: {variacoes_sem_pai}")
         logger.info(f"  📋 Total de PAIs disponíveis: {len(pais_por_complemento)}")
@@ -1679,7 +1676,7 @@ class ProductProcessor:
 
                     # ✅ BUSCAR HIERARQUIA ASCENDENTE USANDO CATEGORY MANAGER
                     if self.category_manager:
-                        logger.info(f"  - CategoryManager disponível, buscando hierarquia...")
+                        logger.info("  - CategoryManager disponível, buscando hierarquia...")
 
                         # ✅ TESTE: Verificar se categoria existe
                         try:
@@ -1728,11 +1725,11 @@ class ProductProcessor:
                         else:
                             logger.warning(f"⚠️ Categoria ID {categoria_id_origem} não encontrada no CategoryManager")
                     else:
-                        logger.warning(f"⚠️ CategoryManager não disponível")
+                        logger.warning("⚠️ CategoryManager não disponível")
                 else:
-                    logger.info(f"  - Categoria vazia ou '0', pulando...")
+                    logger.info("  - Categoria vazia ou '0', pulando...")
             else:
-                logger.info(f"  - Produto sem categoria")
+                logger.info("  - Produto sem categoria")
 
             # ✅ CRIAR OBJETO LOJA WEB
             loja_data = LojaWebData(
@@ -1758,7 +1755,7 @@ class ProductProcessor:
             logger.info(f"  - Categoria Principal: '{categoria_principal_id}'")
             logger.info(f"  - Nível 1: '{nivel_adicional_1_id}'")
             logger.info(f"  - Nível 2: '{nivel_adicional_2_id}'")
-            logger.info(f"  - COD LOJA: '1'")
+            logger.info("  - COD LOJA: '1'")
 
         logger.info(f"✅ {len(loja_web)} produtos processados para aba LOJA WEB")
         return loja_web
@@ -1965,7 +1962,7 @@ class ProductProcessor:
                 Path("outputs/DB_CATEGORIAS.json")
             ]
 
-            logger.info(f"🔍 Caminhos possíveis para DB_CATEGORIAS:")
+            logger.info("🔍 Caminhos possíveis para DB_CATEGORIAS:")
             for i, path in enumerate(possible_paths):
                 exists = path and Path(path).exists() if path else False
                 logger.info(f"  {i + 1}. {path} - Existe: {exists}")
@@ -1978,7 +1975,7 @@ class ProductProcessor:
 
             if categories_path:
                 password = getattr(self.config, 'categories_password', 'admin123')
-                logger.info(f"🔍 Tentando inicializar CategoryManager com senha...")
+                logger.info("🔍 Tentando inicializar CategoryManager com senha...")
 
                 self.category_manager = CategoryManager(categories_path, password)
 
@@ -2048,7 +2045,6 @@ class ProductProcessor:
         if not self.category_manager:
             return []
 
-        hierarchy = []
         def find_path_to_category(categories: List, current_path: List[Dict] = []) -> Optional[List[Dict]]:
             for cat in categories:
                 current_cat = {
@@ -2148,13 +2144,13 @@ class ProductProcessor:
             if len(campos_extras_preenchidos) <= 1:  # Tolerância de 1 campo extra
                 logger.warning(f"  ⚪ PAI VAZIO detectado - EAN: {product.ean}")
                 logger.warning(f"    - Apenas {len(campos_extras_preenchidos)} campo(s) extra(s)")
-                logger.warning(f"    - Vai APENAS para VARIACAO")
+                logger.warning("    - Vai APENAS para VARIACAO")
                 return True
 
             # ✅ SE TEM MUITOS CAMPOS EXTRAS = PAI COMPLETO
             logger.success(f"  ✅ PAI COMPLETO - EAN: {product.ean}")
             logger.success(f"    - {len(campos_extras_preenchidos)} campos extras preenchidos")
-            logger.success(f"    - Vai para TODAS as abas")
+            logger.success("    - Vai para TODAS as abas")
             return False
 
         except Exception as e:
@@ -2191,7 +2187,7 @@ class ProductProcessor:
     def _get_prazo_especial_dmov(self, product: ProductOrigin, prazo_fornecedor: int) -> int:
         """Determina prazo especial para produtos DMOV baseado nas linhas de produto"""
 
-        logger.info(f"🏭 === INICIANDO VERIFICAÇÃO PRAZO ESPECIAL DMOV ===")
+        logger.info("🏭 === INICIANDO VERIFICAÇÃO PRAZO ESPECIAL DMOV ===")
         logger.info(f"     EAN: {product.ean}")
         logger.info(f"  🏷️ Marca configurada: '{self.config.default_brand}'")
         logger.info(f"  ⏱️ Prazo fornecedor recebido: {prazo_fornecedor}")
@@ -2201,7 +2197,7 @@ class ProductProcessor:
             logger.info(f"  ❌ Marca não contém 'DMOV' ou não configurada: '{self.config.default_brand}'")
             return prazo_fornecedor
 
-        logger.info(f"✅ Marca DMOV confirmada, verificando linhas especiais...")
+        logger.info("✅ Marca DMOV confirmada, verificando linhas especiais...")
 
         # ✅ LINHAS COM PRAZO ESPECIAL DE 10 DIAS
         linhas_especiais = ["MORGAN", "LISBOA", "SHER", "JULIETTE", "JULIETE"]  # Mantenha a lista em maiúsculas
@@ -2224,7 +2220,7 @@ class ProductProcessor:
             logger.info(f"     === VERIFICANDO CAMPO: {nome_campo} ===")
 
             if not valor_campo:
-                logger.info(f"    ❌ Campo vazio ou None")
+                logger.info("    ❌ Campo vazio ou None")
                 continue
 
             valor_str = str(valor_campo)
@@ -2237,17 +2233,17 @@ class ProductProcessor:
                 logger.info(f"    🔍 Verificando palavra-chave: '{linha}'")
 
                 if linha in valor_upper:  # Verifica se a palavra-chave (em maiúsculas) está no valor do campo (em maiúsculas)
-                    logger.success(f"  🎯 === LINHA ESPECIAL ENCONTRADA! ===")
+                    logger.success("  🎯 === LINHA ESPECIAL ENCONTRADA! ===")
                     logger.success(f"    - Campo: {nome_campo}")
                     logger.success(f"    - Valor: '{valor_str}'")
                     logger.success(f"    - Palavra-chave detectada: {linha}")
-                    logger.success(f"    - PRAZO ESPECIAL: 10 dias")
+                    logger.success("    - PRAZO ESPECIAL: 10 dias")
                     logger.success(f"    - Prazo anterior: {prazo_fornecedor} dias")
                     return 10
                 else:
                     logger.info(f"    ❌ '{linha}' não encontrado em '{valor_upper}'")
 
         # ✅ SE NÃO ENCONTROU LINHA ESPECIAL, USAR PRAZO PADRÃO
-        logger.info(f"  📅 === NENHUMA LINHA ESPECIAL ENCONTRADA ===")
+        logger.info("  📅 === NENHUMA LINHA ESPECIAL ENCONTRADA ===")
         logger.info(f"  ⏱️ Mantendo prazo padrão do fornecedor: {prazo_fornecedor} dias")
         return prazo_fornecedor
