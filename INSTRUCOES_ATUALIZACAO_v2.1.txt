@@ -1,0 +1,73 @@
+========================================
+ATUALIZAÇÃO CADASTRO D'ROSSI v2.1
+NOVAS FUNCIONALIDADES: ESTOQUE + DROPDOWN
+========================================
+
+🎉 BEM-VINDO À VERSÃO 2.1!
+
+🆕 PRINCIPAIS NOVIDADES:
+
+1. �� ESTOQUE DE SEGURANÇA AUTOMÁTICO
+   • Produtos unitários com código "0": 1000 unidades
+   • Demais produtos: 0 unidades
+   • Cálculo automático baseado no tipo de produto
+
+2. 📋 DROPDOWN INTELIGENTE PARA ABAS
+   • Seleção automática das abas da planilha Excel
+   • Auto-detecção da aba mais provável ("Produtos", etc.)
+   • Botão 🔄 para atualizar lista manualmente
+   • Não precisa mais digitar o nome da aba!
+
+📋 COMO ATUALIZAR:
+
+OPÇÃO A - AUTOMÁTICA (RECOMENDADA):
+1. Baixe os arquivos da atualização
+2. Execute "update_v2.0_to_v2.1.bat"
+3. Aguarde a conclusão
+4. Use o novo atalho na área de trabalho
+
+OPÇÃO B - MANUAL:
+1. Faça backup do arquivo atual (opcional)
+2. Substitua o arquivo antigo pelo novo
+3. Crie novo atalho se necessário
+
+🔧 COMO USAR AS NOVAS FUNCIONALIDADES:
+
+DROPDOWN DE ABAS:
+1. Selecione sua planilha Excel normalmente
+2. As abas aparecerão automaticamente no dropdown
+3. A aba mais provável será selecionada automaticamente
+4. Se necessário, use o botão 🔄 para atualizar
+
+ESTOQUE DE SEGURANÇA:
+• Funciona automaticamente
+• Produtos unitários terão estoque 1000
+• Outros produtos terão estoque 0
+• Aparece na coluna "Estoque de Segurança" da planilha final
+
+⚠️ IMPORTANTE:
+• Todas as configurações anteriores são preservadas
+• Não é necessário reconfigurar nada
+• Compatível com todas as planilhas existentes
+• Não quebra processos atuais
+
+✅ COMPATIBILIDADE:
+• Windows 10/11
+• Todas as versões do Excel
+• Planilhas .xlsx e .xls
+• Mantém compatibilidade total com v2.0
+
+🆘 SUPORTE:
+• Em caso de problemas, contate o Raphael
+• Logs detalhados disponíveis no botão "📋 Ver Logs"
+
+🎯 BENEFÍCIOS DA v2.1:
+✅ Interface mais intuitiva
+✅ Menos erros de digitação
+✅ Processo mais rápido
+✅ Estoque calculado automaticamente
+✅ Melhor experiência do usuário
+
+========================================
+© 2025 D'Rossi Interiores - v2.1
+========================================

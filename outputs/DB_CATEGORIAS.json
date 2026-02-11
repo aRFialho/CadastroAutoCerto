@@ -1,0 +1,875 @@
+[
+  {
+    "name": "Área de Serviço",
+    "id": 584,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Carrinho Estética Multiuso",
+        "id": 603,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Tábuas de Passar",
+        "id": 585,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Banheiro",
+    "id": 605,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Kit Difusor com Porta Sabonete",
+        "id": 608,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Kit Porta Sabonete",
+        "id": 607,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Nichos",
+        "id": 606,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Porta Toalhas",
+        "id": 609,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Bicicletas",
+    "id": 126,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Bicicletas Infantis",
+        "id": 129,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "BMX Amador",
+        "id": 128,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "BMX Iniciante",
+        "id": 127,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Cozinha",
+    "id": 143,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Balcões e Armários de Cozinha",
+        "id": 587,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Armário de Cozinha",
+            "id": 588,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Armário de Cozinha com Balcão",
+            "id": 594,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Balcão de Cozinha",
+            "id": 589,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Balcão para Cooktop",
+            "id": 590,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Nicho de Cozinha",
+            "id": 591,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Paneleiro",
+            "id": 592,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Prateleira",
+            "id": 593,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Banqueta",
+        "id": 145,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Banqueta Alta",
+            "id": 146,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Banqueta Baixa",
+            "id": 147,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Cadeira de Cozinha",
+        "id": 144,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Complementos",
+        "id": 600,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Porta Cápsula de Café",
+            "id": 602,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sousplats",
+            "id": 601,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Conjunto Bistrô e Banquetas",
+            "id": 618,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Conjunto de Mesa com Cadeiras",
+            "id": 595,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Mesa Bistrô",
+            "id": 619,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Móveis Funcionais para Cozinha",
+        "id": 596,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Carrinho Gourmet",
+            "id": 597,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Fruteira",
+            "id": 598,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Suporte para Micro-ondas",
+            "id": 599,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Decorações",
+    "id": 5,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Abajur e Luminarias",
+        "id": 48,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Acessório para Banheiro",
+        "id": 72,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Artigos em MDF",
+        "id": 22,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Bandejas",
+        "id": 20,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Esculturas",
+        "id": 71,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Espelhos",
+        "id": 45,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Folhagem Artificial",
+        "id": 44,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Mantas",
+        "id": 36,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Natal",
+        "id": 50,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Organizadores",
+        "id": 70,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Outlet",
+        "id": 614,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Pecas Decorativas",
+        "id": 34,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Quadros e Placas",
+        "id": 18,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Sousplat",
+        "id": 21,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Tapetes",
+        "id": 51,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Tecido",
+        "id": 23,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Vasos Decorativos",
+        "id": 19,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Envio Imediato",
+    "id": 7,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Decorações",
+        "id": 55,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para Cozinha",
+        "id": 60,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para Escritório",
+        "id": 58,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para Quarto",
+        "id": 59,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para Sala de Estar",
+        "id": 56,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para Sala de Jantar",
+        "id": 57,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Poltronas",
+        "id": 52,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Puffs",
+        "id": 53,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Sofás",
+        "id": 54,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Escritório",
+    "id": 141,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Armário para Escritório",
+        "id": 611,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Cadeira de Escritório",
+        "id": 142,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Escrivaninha",
+        "id": 148,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Estantes",
+        "id": 149,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Gaveteiro",
+        "id": 31,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Mesa Gamer",
+        "id": 610,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Móveis",
+    "id": 6,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Nichos e Armários",
+        "id": 26,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Poltrona",
+    "id": 1,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Poltrona Cama",
+        "id": 617,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Poltrona de Amamentação",
+        "id": 8,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Poltrona de Amamentação com Balanço",
+            "id": 554,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Poltrona de Amamentação Fixa",
+            "id": 553,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Poltrona Decorativa",
+        "id": 2,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Kit de Poltrona com Puff",
+            "id": 547,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Kit de Poltronas Fixa",
+            "id": 544,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Kit de Poltronas Giratória",
+            "id": 546,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Poltrona Base Giratória",
+            "id": 545,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Poltrona Fixa",
+            "id": 543,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Poltrona Reclinável",
+    "id": 11,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Poltrona de Cinema Dupla",
+        "id": 551,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Poltrona de Cinema Tripla",
+        "id": 552,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Poltrona do Papai de Cinema",
+        "id": 549,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Poltrona do Papai de Cinema com Massagem",
+        "id": 550,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Quarto Adulto",
+    "id": 558,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Cabeceiras",
+        "id": 559,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Cabeceira Casal",
+            "id": 560,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Cabeceira King",
+            "id": 562,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Cabeceira Queen",
+            "id": 561,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Cabeceira Solteiro",
+            "id": 563,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Cabeceira Viúva",
+            "id": 564,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Cama Box Articulada",
+        "id": 573,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Cômodas",
+        "id": 1239,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Guarda Roupas",
+        "id": 565,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Guarda Roupa Casal",
+            "id": 567,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Guarda Roupa Closet",
+            "id": 568,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Guarda Roupa Solteiro",
+            "id": 566,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Mesa de Cabeceira",
+        "id": 571,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Penteadeira",
+        "id": 572,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Recamier e Calçadeira",
+        "id": 570,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Conjunto com Cabeceira",
+            "id": 575,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sapateiras",
+            "id": 576,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Quarto Infantil",
+    "id": 577,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Cama Infantil",
+        "id": 615,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Estante Organizadora Infantil",
+        "id": 582,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Guarda Roupas Infantil",
+        "id": 578,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Nichos",
+        "id": 583,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  },
+  {
+    "name": "Sala de Estar",
+    "id": 151,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Chaise",
+        "id": 528,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Complementos para Sala",
+        "id": 534,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Aparador",
+            "id": 537,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Mesa de Centro",
+            "id": 536,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Mesa Lateral",
+            "id": 535,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Conjunto Sala de Estar",
+        "id": 613,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Móveis para TV",
+        "id": 530,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Estante",
+            "id": 533,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Painel TV",
+            "id": 532,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Rack e Bancada com Painel TV",
+            "id": 604,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Racks e Bancadas",
+            "id": 531,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Puffs e Almofadas",
+        "id": 529,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Sofás",
+        "id": 523,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Conjunto Sofá com Poltrona",
+            "id": 541,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Namoradeira",
+            "id": 542,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Namoradeira com Poltrona",
+            "id": 540,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sofá 2 Lugares",
+            "id": 524,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sofá 3 Lugares",
+            "id": 525,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sofá 4 Lugares",
+            "id": 526,
+            "status": "Ativo",
+            "children": []
+          },
+          {
+            "name": "Sofá Cama",
+            "id": 527,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "name": "Sala de Jantar",
+    "id": 104,
+    "status": "Ativo",
+    "children": [
+      {
+        "name": "Buffets",
+        "id": 538,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Cadeira de Jantar",
+        "id": 150,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Cadeiras",
+        "id": 105,
+        "status": "Ativo",
+        "children": [
+          {
+            "name": "Cadeira para Área Externa",
+            "id": 64,
+            "status": "Ativo",
+            "children": []
+          }
+        ]
+      },
+      {
+        "name": "Conjunto Cadeiras e Mesa de Jantar",
+        "id": 586,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Conjunto Sala de Jantar",
+        "id": 612,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Cristaleira",
+        "id": 548,
+        "status": "Ativo",
+        "children": []
+      },
+      {
+        "name": "Mesas de Jantar",
+        "id": 108,
+        "status": "Ativo",
+        "children": []
+      }
+    ]
+  }
+]

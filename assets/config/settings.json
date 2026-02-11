@@ -1,0 +1,16 @@
+{
+  "default_values": {
+    "marca_default": "Dmov"
+  },
+  "email_sender": {
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 465,
+    "use_tls": true,
+    "username": "cadastroautomaticodrossi@gmail.com",
+    "password": "lygl jwsj wjhx cwuf",
+    "from_addr": "cadastroautomaticodrossi@gmail.com",
+    "to_addrs": [
+      "cadastro6@drossiinteriores.com.br"
+    ]
+  }
+}
