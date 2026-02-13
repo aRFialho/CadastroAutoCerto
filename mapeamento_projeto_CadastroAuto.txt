@@ -1,0 +1,205 @@
+MAPEAMENTO DO PROJETO — CadastroAuto (D'Rossi) v2.1
+Gerado em 2026-02-12 21:02:25
+
+1) VISÃO GERAL
+- App desktop (CustomTkinter) para processar planilhas de produtos (origem) e gerar uma planilha destino no padrão da loja/ERP.
+- Possui recursos adicionais: gerenciamento de fornecedores (SQLite), categorias (DB JSON protegido por senha), importação de catálogo/custos (SQLite), precificação automática opcional, e envio de relatório por e-mail.
+
+2) ENTRYPOINTS / BOOTSTRAP
+- main.py: detecta execução como .exe (PyInstaller) vs script; ajusta sys.path; inicia UI via src.ui.main_window.MainWindow.
+  Fluxo: main() -> setup_paths() -> MainWindow() -> MainWindow.run().
+
+3) TREE DO PROJETO (resumo de arquivos)
+CadastroAuto
+├── assets
+│   ├── config
+│   │   └── settings.json
+│   └── templates
+│       └── email_template.html
+├── data
+│   └── suppliers.db
+├── logs
+│   ├── cadastro_2025-12-01.log
+│   ├── cadastro_2026-02-10.log
+│   └── cadastro_2026-02-11.log
+├── outputs
+│   ├── DB_CATEGORIAS.json
+│   └── suppliers.db
+├── src
+│   ├── core
+│   │   ├── config.py
+│   │   ├── costs_database.py
+│   │   ├── exceptions.py
+│   │   ├── models.py
+│   │   ├── product_catalog_database.py
+│   │   ├── product_database.py
+│   │   └── supplier_database.py
+│   ├── processors
+│   │   ├── business_logic.py
+│   │   ├── excel_reader.py
+│   │   └── excel_writer.py
+│   ├── resources
+│   │   └── templates
+│   │       └── Planilha Destino.xlsx
+│   ├── services
+│   │   ├── catalog_importer.py
+│   │   ├── category_manager.py
+│   │   ├── costing_pricing_engine.py
+│   │   ├── costs_importer.py
+│   │   ├── email_sender.py
+│   │   └── product_importer.py
+│   ├── ui
+│   │   ├── components
+│   │   │   ├── catalog_import_dialog.py
+│   │   │   ├── catalog_manager_window.py
+│   │   │   ├── category_manager_window.py
+│   │   │   ├── costs_import_dialog.py
+│   │   │   ├── costs_manager_window.py
+│   │   │   ├── init.py
+│   │   │   ├── log_viewer.py
+│   │   │   ├── log_viewer_real_time.py
+│   │   │   ├── product_dialogs.py
+│   │   │   ├── product_manager_window.py
+│   │   │   ├── product_selection_dialog.py
+│   │   │   ├── products_dashboard.py
+│   │   │   ├── progress_dialog.py
+│   │   │   ├── supplier_form_dialog.py
+│   │   │   ├── supplier_manager.py
+│   │   │   └── supplier_spreadsheet_import_dialog.py
+│   │   └── main_window.py
+│   ├── utils
+│   │   ├── file_utils.py
+│   │   ├── logger.py
+│   │   ├── resource_manager.py
+│   │   └── validators.py
+│   └── logo CAD.png
+├── .env
+├── .gitignore
+├── build.bat
+├── build_and_setup.bat
+├── build_and_setup_v2.1.bat
+├── build_exe.spec
+├── build_installer_v2.1.bat
+├── build_v2.1.bat
+├── Cadastro_Produtos_DRossi.spec
+├── CHANGELOG.md
+├── estrutura.txt
+├── installer.iss
+├── installer_v2.1.iss
+├── INSTRUCOES_ATUALIZACAO_v2.1.txt
+├── logo-CAD.ico
+├── logo-CAD.png
+├── main.py
+├── main.spec
+├── package-lock.json
+├── pyproject.toml
+├── README.md
+├── requirements.txt
+├── show_structure.py
+├── update_v2.0_to_v2.1.bat
+└── version_info.txt
+
+4) COMPONENTES PRINCIPAIS E COMO SE CONECTAM
+
+4.1 UI (src/ui)
+- MainWindow (src/ui/main_window.py):
+  - Carrega config: core.config.load_config()
+  - Inicializa bancos embarcados (copiando templates/DBs para pasta de trabalho, quando necessário).
+  - Cria o ProductProcessor(config) (processors.business_logic).
+  - Ações do usuário:
+    - Selecionar arquivo/aba -> refresh_sheet_list(), on_file_selected()
+    - Iniciar processamento -> start_processing() -> run_processing() (thread separada + loop asyncio)
+    - Abrir logs -> LogViewer / RealTimeLogViewer
+    - Gerenciar fornecedores -> SupplierManagerWindow (usa core.supplier_database.SupplierDatabase)
+    - Gerenciar categorias -> CategoryManagerWindow (usa services.category_manager.CategoryManager)
+    - Gerenciar produtos DB -> ProductManagerWindow (usa core.product_database.ProductDatabase e services.product_importer)
+    - Gerenciar catálogo DB -> CatalogManagerWindow (usa core.product_catalog_database.ProductCatalogDatabase e services.catalog_importer)
+    - Gerenciar custos DB -> CostsManagerWindow (usa core.costs_database.CostsDatabase e services.costs_importer)
+
+  Conexões críticas:
+    MainWindow.run_processing() -> ProductProcessor.process_products(origin_file, sheet_name, callbacks, send_email)
+    MainWindow.resolve_supplier_code() -> SupplierDatabase.search/get (define supplier_code e nome oficial)
+
+4.2 Processamento (src/processors)
+- ProductProcessor (processors/business_logic.py): orquestrador do pipeline.
+  Dependências:
+    - ExcelReader (processors/excel_reader.py) para ler planilha de origem
+    - ExcelWriter (processors/excel_writer.py) para escrever planilha destino
+    - SupplierDatabase (core/supplier_database.py) para resolver fornecedor/prazo
+    - CategoryManager (services/category_manager.py) para mapear hierarquia de categorias (se habilitado)
+    - CostPricingEngine (services/costing_pricing_engine.py) para precificação automática (se habilitado)
+    - EmailSender (services/email_sender.py) para envio de relatório (se habilitado)
+
+  Pipeline (alto nível):
+    process_products()
+      1) reader.read_products(origin_file, sheet_name) -> lista de ProductOrigin (models)
+      2) (opcional) cost_pricing_engine.load_base_data(cost_file)
+      3) _process_produtos(products) -> gera ProductDestination + variações/loja_web/kits + erros
+      4) writer.write_excel(..., template=resources/templates/Planilha Destino.xlsx) -> arquivo final em outputs
+      5) (opcional) EmailSender envia relatório (HTML) + anexo
+
+  Observações importantes achadas no código:
+    - O caminho do SupplierDatabase está FORÇADO em business_logic.py para:
+      C:/Users/USER/Documents/cadastro_produtos_python/outputs/suppliers.db
+      Isso pode divergir do caminho configurado/esperado no runtime (principalmente em outros PCs).
+
+- ExcelReader:
+  - Faz normalização de cabeçalhos e mapeamento flexível de colunas.
+  - Detecta colunas de EAN variação, tipo de produto, cor, anúncio, categoria etc.
+
+- ExcelWriter:
+  - Escreve múltiplas abas (Produtos, Variações, LojaWeb, Kits).
+  - Copia/espelha abas do template e mapeia colunas para manter layout padrão.
+
+4.3 Modelos e Configuração (src/core)
+- models.py: define enums e dataclasses usados no pipeline (ProductOrigin, ProductDestination, VariationData, LojaWebData, KitData, ProcessingResult, AppConfig, EmailConfig etc.).
+- config.py: carrega config de assets/config/settings.json + overrides via variáveis de ambiente.
+- exceptions.py: erros específicos (ExcelProcessingError, ValidationError, EmailError...).
+
+4.4 Persistência / Bancos (src/core)
+- supplier_database.py (SQLite): CRUD de fornecedores + busca por nome/código + heurísticas (acrônimo, keywords, similaridade).
+- product_database.py (SQLite): banco local de produtos, assentos, pés/bases, componentes especiais, combinações, loja web.
+- product_catalog_database.py (SQLite): banco do catálogo (cod_aux, cod_barra etc).
+- costs_database.py (SQLite): banco de custos por fornecedor + custos de produto, stats e busca.
+
+4.5 Serviços (src/services)
+- product_importer.py: importa estrutura avançada de produtos via Excel (detecção de seções, fórmulas, PÉS por grupo etc) e salva no ProductDatabase.
+- catalog_importer.py: importa catálogo (Excel) e grava no ProductCatalogDatabase.
+- costs_importer.py: importa custos (Excel), faz auto-map de colunas e grava no CostsDatabase.
+- costing_pricing_engine.py: motor de precificação (interpreta códigos/linhas/TC, kits, regra dos 0,90 etc).
+- category_manager.py: gerencia DB de categorias em JSON (com senha), permite buscar path/hierarquia e importar de TXT.
+- email_sender.py: gera relatório HTML (usando template) e envia via SMTP SSL/TLS.
+
+4.6 Utilitários (src/utils)
+- logger.py: setup_logger()/get_logger() com níveis + logs em arquivo.
+- validators.py: validações (EAN, e-mail, arquivo Excel, normalizações).
+- resource_manager.py: resolve caminhos de recursos (principalmente em build PyInstaller) e extrai template para uso.
+
+5) 'ÁRVORE' DE CONEXÕES (call tree do fluxo principal)
+main.py
+└── MainWindow (ui/main_window.py)
+    ├── load_config (core/config.py) -> AppConfig
+    ├── initialize_embedded_databases()
+    ├── ProductProcessor(config) (processors/business_logic.py)
+    │   ├── ExcelReader() (processors/excel_reader.py)
+    │   ├── ExcelWriter() (processors/excel_writer.py)
+    │   ├── SupplierDatabase(sqlite) (core/supplier_database.py)
+    │   ├── (opcional) CostPricingEngine (services/costing_pricing_engine.py)
+    │   ├── (opcional) CategoryManager (services/category_manager.py)
+    │   └── process_products()
+    │       ├── read_products() -> List[ProductOrigin]
+    │       ├── _process_produtos() -> destinos/variações/loja_web/kits
+    │       ├── write_excel() -> arquivo destino
+    │       └── (opcional) EmailSender -> SMTP
+    └── Componentes UI auxiliares
+        ├── SupplierManagerWindow -> SupplierDatabase
+        ├── CategoryManagerWindow -> CategoryManager
+        ├── ProductManagerWindow -> ProductDatabase + ProductImporter
+        ├── CatalogManagerWindow -> ProductCatalogDatabase + CatalogImporter
+        └── CostsManagerWindow -> CostsDatabase + CostsImporter
+
+6) PONTOS QUE VALEM PARA UPGRADES (já pensando no próximo passo)
+- Remover/parametrizar caminho hardcoded do suppliers.db em ProductProcessor (usar config.output_dir).
+- Centralizar inicialização de DBs (supplier/product/catalog/costs) num único lugar, evitando caminhos divergentes entre UI e processor.
+- Criar uma camada 'repository/service' para separar regra de negócio da UI (facilita testes e upgrades).
+- Instrumentar logs por etapa (tempo de leitura, tempo de processamento, tempo de escrita) para debugar performance.
