@@ -1,304 +1,449 @@
+"""
+Tela: Robô Athos
+- Importa arquivo(s) (SQL export / whitelist / template)
+- Executa geração das 5 planilhas + relatório (via service)
+- Mantém UI no padrão do projeto (CustomTkinter) e roda em thread
+"""
+
 from __future__ import annotations
 
-import json
-from dataclasses import asdict
-from datetime import datetime
-from pathlib import Path
-from typing import Optional
-
 import customtkinter as ctk
+import tkinter as tk
 from tkinter import filedialog, messagebox
+import threading
+from pathlib import Path
+from datetime import datetime
 
-from src.services.athos_whitelist import copy_whitelist_to_outputs, load_whitelist
-from src.services.athos_odbc_client import AthosOdbcClient, OdbcConfig
-from src.services.athos_sql import ATHOS_SQL_QUERY
-from src.services.athos_rules_engine import process_rows
-from src.services.athos_excel_generator import generate_rule_files
-from src.services.athos_report_writer import write_report_xlsx
+from ..core.config import load_config
+from ..utils.logger import get_logger
 
+logger = get_logger("athos_window")
 
-DEFAULT_CONFIG_PATHS = [
-    Path("assets/config/settings.json"),
-    Path("assets/settings.json"),
-    Path("settings.json"),
-]
-
-
-def _now_tag() -> str:
-    # ex: 2026-02-16_1430
-    return datetime.now().strftime("%Y-%m-%d_%H%M")
-
-
-def _find_config_path() -> Path:
-    for p in DEFAULT_CONFIG_PATHS:
-        if p.exists():
-            return p
-    # fallback: cria em settings.json
-    return Path("settings.json")
-
-
-def _read_json(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-
-def _write_json(path: Path, data: dict) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+# ✅ Service (vamos criar depois)
+try:
+    from ..services.athos_runner import AthosRunner  # type: ignore
+except Exception:
+    AthosRunner = None  # type: ignore
 
 
 class AthosWindow(ctk.CTkToplevel):
-    """
-    Tela separada: Robô Athos
+    """Janela Robô Athos"""
 
-    Fluxo:
-    - Atualizar imediatos: seleciona arquivo -> copia para outputs/imediatos -> carrega whitelist -> salva no config
-    - Gerar planilhas do dia: roda SQL via ODBC -> processa regras -> gera 5 xlsx -> gera relatório
-    """
-
-    def __init__(self, master, config_path: Optional[str | Path] = None):
+    def __init__(self, master):
         super().__init__(master)
 
-        self.title("Robô Athos")
-        self.geometry("860x560")
-        self.minsize(820, 520)
+        self.title("🤖 Robô Athos")
+        self.geometry("900x720")
+        self.minsize(820, 650)
 
-        self.config_path = Path(config_path) if config_path else _find_config_path()
-        self.cfg = _read_json(self.config_path)
-
-        # seção athos no config
-        self.cfg.setdefault("athos", {})
-        self.cfg["athos"].setdefault("odbc_dsn", "EXCELREAD64")
-        self.cfg["athos"].setdefault("odbc_user", "EXCEL_READ")
-        self.cfg["athos"].setdefault("odbc_password", "172839")
-        self.cfg["athos"].setdefault("odbc_role", "R_EXCEL")
-        self.cfg["athos"].setdefault("template_path", "")  # você setará pelo botão
-        self.cfg["athos"].setdefault("whitelist_path", "")  # preenchido ao atualizar
-        self.cfg["athos"].setdefault("whitelist_updated_at", "")
-        self.cfg["athos"].setdefault("outputs_dir", "outputs/robot")
-        self.cfg["athos"].setdefault("report_dir", "outputs/robot/relatorios")
-
-        self._build_ui()
-        self._refresh_labels()
-
-        # garante persistência do cfg inicial
-        _write_json(self.config_path, self.cfg)
-
-        # comportamento padrão de Toplevel
+        # Mantém em cima e modal leve
         self.transient(master)
-        self.grab_set()
-        self.focus()
+        self.lift()
+        self.focus_force()
 
-    # ---------------- UI ----------------
+        self.config_data = load_config()
 
-    def _build_ui(self):
-        pad = 12
+        # Estado
+        self.processing = False
+        self.cancel_requested = False
 
-        # Top bar
-        top = ctk.CTkFrame(self)
-        top.pack(fill="x", padx=pad, pady=(pad, 6))
+        # Vars
+        self.sql_export_var = tk.StringVar(value="")
+        self.whitelist_var = tk.StringVar(value="")
+        self.template_var = tk.StringVar(value="")
+        self.output_dir_var = tk.StringVar(value=str(self.config_data.output_dir))
 
-        self.lbl_cfg = ctk.CTkLabel(top, text="Config: -", anchor="w")
-        self.lbl_cfg.pack(fill="x", padx=pad, pady=(8, 2))
+        self.status_var = tk.StringVar(value="Pronto")
+        self.progress_var = tk.DoubleVar(value=0.0)
 
-        row = ctk.CTkFrame(top, fg_color="transparent")
-        row.pack(fill="x", padx=pad, pady=(4, 10))
+        # UI
+        self._build_ui()
 
-        self.btn_template = ctk.CTkButton(
-            row, text="Selecionar Template", command=self.on_select_template, width=180
-        )
-        self.btn_template.pack(side="left", padx=(0, 10))
+        # Fechar
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
-        self.btn_whitelist = ctk.CTkButton(
-            row, text="Atualizar imediatos", command=self.on_update_whitelist, width=180
-        )
-        self.btn_whitelist.pack(side="left", padx=(0, 10))
-
-        self.btn_run = ctk.CTkButton(
-            row, text="Gerar planilhas do dia", command=self.on_run, width=200
-        )
-        self.btn_run.pack(side="left", padx=(0, 10))
-
-        self.btn_open_out = ctk.CTkButton(
-            row, text="Abrir pasta outputs", command=self.on_open_outputs, width=180
-        )
-        self.btn_open_out.pack(side="left")
-
-        # Status cards
-        mid = ctk.CTkFrame(self)
-        mid.pack(fill="x", padx=pad, pady=6)
-
-        self.lbl_template = ctk.CTkLabel(mid, text="Template: -", anchor="w")
-        self.lbl_template.pack(fill="x", padx=pad, pady=(10, 2))
-
-        self.lbl_white = ctk.CTkLabel(mid, text="Whitelist: -", anchor="w")
-        self.lbl_white.pack(fill="x", padx=pad, pady=(2, 10))
-
-        # Log box
-        bot = ctk.CTkFrame(self)
-        bot.pack(fill="both", expand=True, padx=pad, pady=(6, pad))
-
-        self.txt = ctk.CTkTextbox(bot, wrap="word")
-        self.txt.pack(fill="both", expand=True, padx=pad, pady=pad)
-
-    def log(self, msg: str):
-        ts = datetime.now().strftime("%H:%M:%S")
-        self.txt.insert("end", f"[{ts}] {msg}\n")
-        self.txt.see("end")
-        self.update_idletasks()
-
-    def _refresh_labels(self):
-        ath = self.cfg.get("athos", {})
-        self.lbl_cfg.configure(text=f"Config: {self.config_path.as_posix()}")
-
-        template = ath.get("template_path", "") or "-"
-        self.lbl_template.configure(text=f"Template: {template}")
-
-        wl = ath.get("whitelist_path", "") or "-"
-        wl_at = ath.get("whitelist_updated_at", "") or "-"
-        self.lbl_white.configure(text=f"Whitelist: {wl}  | Atualizada: {wl_at}")
-
-    # ---------------- Actions ----------------
-
-    def on_select_template(self):
-        path = filedialog.askopenfilename(
-            title="Selecione o template (XLSX)",
-            filetypes=[("Excel", "*.xlsx")],
-        )
-        if not path:
-            return
-        self.cfg["athos"]["template_path"] = path
-        _write_json(self.config_path, self.cfg)
-        self._refresh_labels()
-        self.log(f"Template selecionado: {path}")
-
-    def on_update_whitelist(self):
-        path = filedialog.askopenfilename(
-            title="Selecione a whitelist de imediatos",
-            filetypes=[
-                ("Excel", "*.xls *.xlsx"),
-                ("CSV", "*.csv"),
-                ("TXT", "*.txt"),
-                ("Todos", "*.*"),
-            ],
-        )
-        if not path:
-            return
-
+    # =========================
+    # Safe UI scheduling
+    # =========================
+    def _safe_after(self, ms: int, fn):
+        """Evita TclError quando a janela já foi destruída."""
         try:
-            self.log("Copiando whitelist para outputs/imediatos ...")
-            dest = copy_whitelist_to_outputs(path)
-
-            self.log("Carregando whitelist...")
-            result = load_whitelist(dest)
-
-            self.cfg["athos"]["whitelist_path"] = str(dest)
-            self.cfg["athos"]["whitelist_updated_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            _write_json(self.config_path, self.cfg)
-
-            self._refresh_labels()
-            self.log(
-                f"Whitelist OK: {result.valid_eans} EANs válidos | "
-                f"duplicados ignorados: {result.duplicates_ignored} | inválidos: {result.invalid_ignored}"
-            )
-        except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao atualizar whitelist:\n{e}")
-            self.log(f"ERRO whitelist: {e}")
-
-    def on_run(self):
-        ath = self.cfg.get("athos", {})
-        template_path = ath.get("template_path", "")
-        whitelist_path = ath.get("whitelist_path", "")
-
-        if not template_path or not Path(template_path).exists():
-            messagebox.showwarning("Template", "Selecione o template primeiro (botão 'Selecionar Template').")
-            return
-
-        if not whitelist_path or not Path(whitelist_path).exists():
-            messagebox.showwarning("Whitelist", "Atualize a whitelist primeiro (botão 'Atualizar imediatos').")
-            return
-
-        try:
-            # 1) carrega whitelist
-            self.log("Carregando whitelist...")
-            wl = load_whitelist(whitelist_path).eans
-            self.log(f"Whitelist carregada: {len(wl)} EANs")
-
-            # 2) roda SQL via ODBC
-            self.log("Conectando no ODBC e executando SQL...")
-            cfg = OdbcConfig(
-                dsn=ath.get("odbc_dsn", "EXCELREAD64"),
-                user=ath.get("odbc_user", "EXCEL_READ"),
-                password=ath.get("odbc_password", "172839"),
-                role=ath.get("odbc_role", "R_EXCEL"),
-            )
-            client = AthosOdbcClient(cfg)
-            rows = client.run_query(ATHOS_SQL_QUERY, timeout_seconds=180)
-            self.log(f"SQL retornou {len(rows)} linhas")
-
-            # 3) processa regras
-            self.log("Processando regras (ordem oficial)...")
-            outputs = process_rows(rows, wl)
-
-            # 4) gera 5 planilhas
-            out_dir = Path(ath.get("outputs_dir", "outputs/robot"))
-            report_dir = Path(ath.get("report_dir", "outputs/robot/relatorios"))
-            tag = _now_tag()
-
-            self.log("Gerando 5 planilhas (aba PRODUTO)...")
-            generated = generate_rule_files(
-                template_path=template_path,
-                out_dir=out_dir,
-                actions_by_rule=outputs.actions_by_rule,
-                date_tag=tag,
-            )
-
-            # 5) gera relatório único
-            self.log("Gerando relatório único...")
-            report_file = write_report_xlsx(outputs.report_lines, report_dir, date_tag=tag)
-
-            # 6) resumo
-            self.log("===== RESUMO =====")
-            for rule, fp in generated.files_by_rule.items():
-                qty = len(outputs.actions_by_rule.get(rule, []))
-                self.log(f"{rule.value}: {qty} linhas -> {fp.as_posix()}")
-            self.log(f"RELATÓRIO: {report_file.total_lines} linhas -> {report_file.path.as_posix()}")
-            self.log("==================")
-
-            messagebox.showinfo("Robô Athos", "Planilhas e relatório gerados com sucesso.")
-        except Exception as e:
-            messagebox.showerror("Erro", f"Falha ao gerar planilhas:\n{e}")
-            self.log(f"ERRO run: {e}")
-
-    def on_open_outputs(self):
-        # abre pasta outputs/robot no explorer
-        ath = self.cfg.get("athos", {})
-        out_dir = Path(ath.get("outputs_dir", "outputs/robot"))
-
-        try:
-            out_dir.mkdir(parents=True, exist_ok=True)
+            if self.winfo_exists():
+                self.after(ms, fn)
         except Exception:
             pass
 
+    # =========================
+    # UI
+    # =========================
+    def _build_ui(self):
+        # Header
+        header = ctk.CTkFrame(self, height=90)
+        header.pack(fill="x", padx=20, pady=(20, 10))
+        header.pack_propagate(False)
+
+        ctk.CTkLabel(
+            header,
+            text="🤖 Robô Athos",
+            font=ctk.CTkFont(size=26, weight="bold"),
+        ).pack(pady=(18, 2))
+
+        ctk.CTkLabel(
+            header,
+            text="Geração de planilhas (Fora de Linha, Estoque Compartilhado, Envio Imediato, Sem Grupo, Outlet) + Relatório",
+            font=ctk.CTkFont(size=13),
+            text_color=("gray60", "gray40"),
+            wraplength=820,
+        ).pack(pady=(0, 14))
+
+        # Body
+        body = ctk.CTkScrollableFrame(self)
+        body.pack(fill="both", expand=True, padx=20, pady=10)
+
+        self._section_files(body)
+        self._section_actions(body)
+        self._section_logs(body)
+
+        # Footer status
+        footer = ctk.CTkFrame(self, height=70)
+        footer.pack(fill="x", padx=20, pady=(10, 20))
+        footer.pack_propagate(False)
+
+        status_row = ctk.CTkFrame(footer, fg_color="transparent")
+        status_row.pack(fill="x", padx=16, pady=(10, 0))
+
+        ctk.CTkLabel(status_row, text="Status:", font=ctk.CTkFont(size=13, weight="bold")).pack(
+            side="left", padx=(0, 8)
+        )
+        ctk.CTkLabel(status_row, textvariable=self.status_var, font=ctk.CTkFont(size=13)).pack(
+            side="left", fill="x", expand=True
+        )
+
+        self.progress_bar = ctk.CTkProgressBar(footer, variable=self.progress_var, height=18)
+        self.progress_bar.pack(fill="x", padx=16, pady=(8, 14))
+        self.progress_bar.set(0.0)
+
+    def _section_files(self, parent):
+        frame = ctk.CTkFrame(parent)
+        frame.pack(fill="x", pady=(0, 16))
+
+        ctk.CTkLabel(
+            frame, text="📁 Arquivos", font=ctk.CTkFont(size=18, weight="bold"), anchor="w"
+        ).pack(fill="x", padx=18, pady=(16, 10))
+
+        # SQL export
+        self._file_row(
+            frame,
+            label="Arquivo com resultado do SQL (export Excel) *",
+            var=self.sql_export_var,
+            button_text="📂 Selecionar",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
+        )
+
+        # Whitelist
+        self._file_row(
+            frame,
+            label="Whitelist (PRODUTOS.xls / lista de imediatos) *",
+            var=self.whitelist_var,
+            button_text="📂 Selecionar",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
+        )
+
+        # Template
+        self._file_row(
+            frame,
+            label="Template Athos (planilha modelo) *",
+            var=self.template_var,
+            button_text="📂 Selecionar",
+            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
+        )
+
+        # Output dir
+        row = ctk.CTkFrame(frame, fg_color="transparent")
+        row.pack(fill="x", padx=18, pady=(6, 18))
+
+        ctk.CTkLabel(row, text="Pasta de saída:", font=ctk.CTkFont(size=13, weight="bold")).pack(
+            anchor="w", pady=(0, 6)
+        )
+
+        box = ctk.CTkFrame(row)
+        box.pack(fill="x")
+
+        entry = ctk.CTkEntry(box, textvariable=self.output_dir_var, placeholder_text="outputs/ ...")
+        entry.pack(side="left", fill="x", expand=True, padx=(12, 10), pady=12)
+
+        ctk.CTkButton(
+            box,
+            text="📁 Pasta",
+            width=120,
+            command=self._select_output_dir,
+        ).pack(side="right", padx=(0, 12), pady=12)
+
+    def _section_actions(self, parent):
+        frame = ctk.CTkFrame(parent)
+        frame.pack(fill="x", pady=(0, 16))
+
+        ctk.CTkLabel(
+            frame, text="⚙️ Ações", font=ctk.CTkFont(size=18, weight="bold"), anchor="w"
+        ).pack(fill="x", padx=18, pady=(16, 10))
+
+        btn_row = ctk.CTkFrame(frame, fg_color="transparent")
+        btn_row.pack(fill="x", padx=18, pady=(0, 16))
+
+        self.run_btn = ctk.CTkButton(
+            btn_row,
+            text="🔁 Atualizar Imediatos (gerar 5 planilhas + relatório)",
+            height=52,
+            font=ctk.CTkFont(size=15, weight="bold"),
+            command=self._start_processing,
+        )
+        self.run_btn.pack(side="left", fill="x", expand=True, padx=(0, 10))
+
+        self.cancel_btn = ctk.CTkButton(
+            btn_row,
+            text="🛑 Cancelar",
+            width=140,
+            height=52,
+            command=self._request_cancel,
+            state="disabled",
+        )
+        self.cancel_btn.pack(side="right")
+
+        info = ctk.CTkFrame(frame, fg_color="transparent")
+        info.pack(fill="x", padx=18, pady=(0, 16))
+
+        ctk.CTkLabel(
+            info,
+            text=(
+                "📌 Observações:\n"
+                "• O processamento seguirá a ordem: FORA DE LINHA → ESTOQUE COMPARTILHADO → ENVIO IMEDIATO → SEM GRUPO → OUTLET.\n"
+                "• A planilha gerada sempre preenche SOMENTE a aba 'PRODUTOS' do template.\n"
+                "• O relatório consolidado listará o que foi alterado (PA/KIT/PAI, marca, grupo3 e ação aplicada)."
+            ),
+            justify="left",
+            text_color=("gray60", "gray40"),
+            font=ctk.CTkFont(size=12),
+            wraplength=820,
+        ).pack(anchor="w")
+
+    def _section_logs(self, parent):
+        frame = ctk.CTkFrame(parent)
+        frame.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(
+            frame, text="🧾 Log / Resultado", font=ctk.CTkFont(size=18, weight="bold"), anchor="w"
+        ).pack(fill="x", padx=18, pady=(16, 10))
+
+        self.log_text = ctk.CTkTextbox(frame, height=220)
+        self.log_text.pack(fill="both", expand=True, padx=18, pady=(0, 16))
+        self._log("Robô Athos pronto. Selecione os arquivos e clique em “Atualizar Imediatos”.")
+
+    def _file_row(self, parent, label: str, var: tk.StringVar, button_text: str, filetypes):
+        container = ctk.CTkFrame(parent, fg_color="transparent")
+        container.pack(fill="x", padx=18, pady=8)
+
+        ctk.CTkLabel(container, text=label, font=ctk.CTkFont(size=13, weight="bold")).pack(
+            anchor="w", pady=(0, 6)
+        )
+
+        box = ctk.CTkFrame(container)
+        box.pack(fill="x")
+
+        entry = ctk.CTkEntry(box, textvariable=var, placeholder_text="Selecione o arquivo...")
+        entry.pack(side="left", fill="x", expand=True, padx=(12, 10), pady=12)
+
+        ctk.CTkButton(
+            box,
+            text=button_text,
+            width=140,
+            command=lambda: self._select_file(var, filetypes),
+        ).pack(side="right", padx=(0, 12), pady=12)
+
+    # =========================
+    # Actions
+    # =========================
+    def _select_file(self, var: tk.StringVar, filetypes):
+        path = filedialog.askopenfilename(title="Selecionar arquivo", filetypes=filetypes)
+        if path:
+            var.set(path)
+
+    def _select_output_dir(self):
+        path = filedialog.askdirectory(title="Selecionar pasta de saída")
+        if path:
+            self.output_dir_var.set(path)
+
+    def _start_processing(self):
+        if self.processing:
+            messagebox.showwarning("Aviso", "Processamento já está em andamento.")
+            return
+
+        # Validações simples
+        sql_path = Path(self.sql_export_var.get().strip()) if self.sql_export_var.get().strip() else None
+        wl_path = Path(self.whitelist_var.get().strip()) if self.whitelist_var.get().strip() else None
+        tpl_path = Path(self.template_var.get().strip()) if self.template_var.get().strip() else None
+        out_dir = Path(self.output_dir_var.get().strip()) if self.output_dir_var.get().strip() else None
+
+        missing = []
+        if not sql_path or not sql_path.exists():
+            missing.append("• Arquivo resultado SQL (Excel)")
+        if not wl_path or not wl_path.exists():
+            missing.append("• Whitelist (PRODUTOS.xls)")
+        if not tpl_path or not tpl_path.exists():
+            missing.append("• Template Athos (modelo)")
+        if not out_dir:
+            missing.append("• Pasta de saída")
+
+        if missing:
+            messagebox.showerror("Campos obrigatórios", "Faltam itens:\n" + "\n".join(missing))
+            return
+
+        # Start thread
+        self.processing = True
+        self.cancel_requested = False
+        self.run_btn.configure(state="disabled", text="⏳ Processando...")
+        self.cancel_btn.configure(state="normal")
+        self.progress_bar.set(0.0)
+        self.status_var.set("Iniciando...")
+
+        thread = threading.Thread(
+            target=self._run_processing_thread,
+            args=(sql_path, wl_path, tpl_path, out_dir),
+            daemon=True,
+        )
+        thread.start()
+
+    def _request_cancel(self):
+        if not self.processing:
+            return
+        self.cancel_requested = True
+        self.status_var.set("Cancelamento solicitado...")
+
+    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path):
         try:
-            import os
-            import platform
-            import subprocess
+            started = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            self._ui_log(f"🚀 Início: {started}")
+            self._ui_log(f"SQL export: {sql_path}")
+            self._ui_log(f"Whitelist: {wl_path}")
+            self._ui_log(f"Template: {tpl_path}")
+            self._ui_log(f"Saída: {out_dir}")
+            self._ui_status("Validando serviço...")
 
-            p = out_dir.resolve()
+            if AthosRunner is None:
+                self._ui_log("❌ Service AthosRunner ainda não existe.")
+                self._ui_log("➡️ Próximo arquivo que vou te mandar: src/services/athos_runner.py")
+                self._ui_fail("Service não encontrado (athos_runner.py).")
+                return
 
-            if platform.system().lower().startswith("win"):
-                os.startfile(str(p))  # type: ignore
-            elif platform.system().lower() == "darwin":
-                subprocess.run(["open", str(p)], check=False)
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            runner = AthosRunner(
+                output_dir=out_dir,
+                logger=logger,
+            )
+
+            def progress(p: float, msg: str = ""):
+                if self.cancel_requested:
+                    raise RuntimeError("CANCELLED_BY_USER")
+                p = max(0.0, min(1.0, float(p)))
+                self._ui_progress(p)
+                if msg:
+                    self._ui_status(msg)
+
+            self._ui_status("Executando regras...")
+            result = runner.run(
+                sql_export_path=sql_path,
+                whitelist_path=wl_path,
+                template_path=tpl_path,
+                progress_callback=progress,
+            )
+
+            self._ui_progress(1.0)
+            self._ui_status("Concluído ✅")
+
+            self._ui_log("")
+            self._ui_log("✅ Arquivos gerados:")
+            for p in getattr(result, "generated_files", []) or []:
+                self._ui_log(f" - {p}")
+
+            report_path = getattr(result, "report_path", None)
+            if report_path:
+                self._ui_log(f"🧾 Relatório: {report_path}")
+
+            finished = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+            self._ui_log(f"🏁 Fim: {finished}")
+
+            self._ui_done("Processamento concluído com sucesso!")
+
+        except RuntimeError as e:
+            if str(e) == "CANCELLED_BY_USER":
+                self._ui_log("🛑 Cancelado pelo usuário.")
+                self._ui_fail("Cancelado.")
             else:
-                subprocess.run(["xdg-open", str(p)], check=False)
-
-            self.log(f"Abrindo pasta: {p.as_posix()}")
+                self._ui_log(f"❌ RuntimeError: {e}")
+                self._ui_fail("Erro no processamento.")
         except Exception as e:
-            messagebox.showerror("Erro", f"Não consegui abrir a pasta:\n{e}")
-            self.log(f"ERRO abrir outputs: {e}")
+            logger.error(f"Erro no Robô Athos: {e}")
+            self._ui_log(f"❌ Erro: {e}")
+            self._ui_fail("Erro no processamento.")
+        finally:
+            self._ui_reset_buttons()
+
+    # =========================
+    # UI helpers (thread-safe)
+    # =========================
+    def _ui_reset_buttons(self):
+        def _apply():
+            self.processing = False
+            self.cancel_requested = False
+            try:
+                self.run_btn.configure(state="normal", text="🔁 Atualizar Imediatos (gerar 5 planilhas + relatório)")
+                self.cancel_btn.configure(state="disabled")
+            except Exception:
+                pass
+
+        self._safe_after(0, _apply)
+
+    def _ui_progress(self, value: float):
+        self._safe_after(0, lambda: self.progress_bar.set(value))
+
+    def _ui_status(self, msg: str):
+        self._safe_after(0, lambda: self.status_var.set(msg))
+
+    def _ui_log(self, msg: str):
+        self._safe_after(0, lambda: self._log(msg))
+
+    def _ui_fail(self, status: str):
+        def _apply():
+            self.status_var.set(status)
+            self.progress_bar.set(0.0)
+
+        self._safe_after(0, _apply)
+
+    def _ui_done(self, toast: str):
+        def _apply():
+            try:
+                if self.winfo_exists():
+                    messagebox.showinfo("Robô Athos", toast)
+            except Exception:
+                pass
+
+        self._safe_after(0, _apply)
+
+    def _log(self, msg: str):
+        try:
+            if not self.winfo_exists():
+                return
+            self.log_text.insert("end", msg + "\n")
+            self.log_text.see("end")
+        except Exception:
+            pass
+
+    def _on_close(self):
+        if self.processing:
+            if not messagebox.askokcancel("Fechar", "Processamento em andamento. Deseja cancelar e fechar?"):
+                return
+            self.cancel_requested = True
+        try:
+            self.destroy()
+        except Exception:
+            pass
