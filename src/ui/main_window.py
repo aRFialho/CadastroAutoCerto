@@ -27,11 +27,9 @@ except ImportError:
 
 try:
     from .components.supplier_manager import SupplierManagerWindow
-    from ..core.supplier_database import SupplierDatabase
     SUPPLIER_SYSTEM_AVAILABLE = True
 except ImportError:
     SupplierManagerWindow = None
-    SupplierDatabase = None
     SUPPLIER_SYSTEM_AVAILABLE = False
 
 try:
@@ -70,19 +68,16 @@ class MainWindow:
         # ✅ CRIAR PROCESSOR (UMA VEZ SÓ)
         self.processor = ProductProcessor(self.config)
 
-        # Inicializar banco de fornecedores
-        if SUPPLIER_SYSTEM_AVAILABLE:
-            try:
-                self.supplier_db_path = self.config.output_dir / "suppliers.db"
-                self.supplier_db = SupplierDatabase(self.supplier_db_path)
-                self.initialize_supplier_database()
-                logger.info(f"Banco de fornecedores inicializado: {self.supplier_db_path}")
-            except Exception as e:
-                logger.error(f"Erro ao inicializar banco de fornecedores: {e}")
-                self.supplier_db = None
-        else:
-            logger.warning("Sistema de fornecedores não disponível")
-            self.supplier_db = None
+        # ✅ Reflete status do banco de fornecedores no UI
+        try:
+            if hasattr(self.processor, 'is_supplier_db_available'):
+                self.supplier_db_available = bool(self.processor.is_supplier_db_available())
+            self.supplier_status_message = getattr(self.processor, 'supplier_status_message', '') or ''
+        except Exception:
+            self.supplier_db_available = False
+            self.supplier_status_message = 'Indisponível'
+        # ✅ Caminho esperado do banco de fornecedores (para UI/diagnóstico)
+        self.supplier_db_path = self.config.output_dir / "suppliers.db"
 
         # Inicializar gerenciador de categorias
         if CATEGORY_SYSTEM_AVAILABLE:
@@ -108,6 +103,7 @@ class MainWindow:
         self.catalog_window = None
         self.costs_window = None
         self.log_viewer = None
+        self.supplier_manager_window = None
 
         # ✅ NOVO: janela do Robô Athos
         self.athos_window = None
@@ -116,28 +112,13 @@ class MainWindow:
         self.setup_ui()
 
     def initialize_supplier_database(self):
-        """Inicializa banco com alguns fornecedores padrão"""
-        if not self.supplier_db:
-            return
+        """(Legado) Inicialização automática de fornecedores.
 
-        try:
-            stats = self.supplier_db.get_statistics()  # ✅ MÉTODO CORRETO
-            if stats["total_suppliers"] > 0:
-                logger.info(f"Banco já possui {stats['total_suppliers']} fornecedores")
-                return
-
-            # ✅ ADICIONAR FORNECEDORES PADRÃO COM PRAZO
-            default_suppliers = [
-                ("DMOV", 51, 5),  # Nome, Código, Prazo em dias
-            ]
-
-            for name, code, prazo_dias in default_suppliers:
-                self.supplier_db.add_supplier(name, code, prazo_dias)
-
-            logger.info("Banco inicializado com fornecedores padrão")
-
-        except Exception as e:
-            logger.error(f"Erro ao inicializar banco: {e}")
+        ✅ Agora o banco de fornecedores é inicializado dentro do ProductProcessor de forma
+        resiliente (não quebra se faltar sqlite3/arquivo/permissão).
+        Mantido aqui apenas por compatibilidade.
+        """
+        return
 
     def initialize_embedded_databases(self):
         """Copia bancos embarcados para pasta de trabalho se não existirem"""
@@ -204,6 +185,9 @@ class MainWindow:
         self.create_main_content()
         self.create_footer()
         self.create_floating_color_button()
+
+        # ✅ Atualiza indicadores/estado de botões conforme disponibilidade de módulos
+        self.refresh_system_status()
 
         self.root.after(100, self.maximize_window)
 
@@ -559,6 +543,55 @@ class MainWindow:
         except Exception:
             pass
 
+
+    def refresh_system_status(self):
+        """Atualiza a interface conforme disponibilidade dos subsistemas."""
+        # Status Fornecedores
+        status_f = getattr(self, "supplier_status_var", None)
+        btn_f = getattr(self, "btn_fornecedores", None)
+        if getattr(self, "supplier_db_available", False):
+            if status_f:
+                status_f.set("✅ Fornecedores: OK")
+            if btn_f:
+                btn_f.configure(state="normal")
+        else:
+            reason = getattr(self, "supplier_db_unavailable_reason", "Indisponível")
+            if status_f:
+                status_f.set(f"⚠️ Fornecedores: Indisponível — {reason}")
+            if btn_f:
+                btn_f.configure(state="disabled")
+
+        # Status Categorias
+        status_c = getattr(self, "category_status_var", None)
+        btn_c = getattr(self, "btn_categorias", None)
+        if getattr(self, "category_manager_available", False):
+            if status_c:
+                status_c.set("✅ Categorias: OK")
+            if btn_c:
+                btn_c.configure(state="normal")
+        else:
+            reason = getattr(self, "category_manager_unavailable_reason", "Indisponível")
+            if status_c:
+                status_c.set(f"⚠️ Categorias: Indisponível — {reason}")
+            if btn_c:
+                btn_c.configure(state="disabled")
+
+        # Status Robô Athos
+        status_a = getattr(self, "athos_status_var", None)
+        btn_a = getattr(self, "btn_athos", None)
+        if getattr(self, "athos_available", False):
+            if status_a:
+                status_a.set("✅ Robô Athos: OK")
+            if btn_a:
+                btn_a.configure(state="normal")
+        else:
+            reason = getattr(self, "athos_unavailable_reason", "Indisponível")
+            if status_a:
+                status_a.set(f"⚠️ Robô Athos: Indisponível — {reason}")
+            if btn_a:
+                btn_a.configure(state="disabled")
+
+
     def create_processing_section(self):
         """Seção de processamento"""
         process_frame = ctk.CTkFrame(self.main_frame)
@@ -610,22 +643,23 @@ class MainWindow:
             height=40,
             width=130
         ).pack(side="left", padx=(0, 10))
-
-        ctk.CTkButton(
+        self.btn_fornecedores = ctk.CTkButton(
             first_row,
             text="🗄️ Fornecedores",
             command=self.show_supplier_manager,
             height=40,
             width=130
-        ).pack(side="left", padx=(0, 10))
+        )
+        self.btn_fornecedores.pack(side="left", padx=(0, 10))
 
-        ctk.CTkButton(
+        self.btn_categorias = ctk.CTkButton(
             first_row,
             text="🏷️ Categorias",
             command=self.show_category_manager,
             height=40,
             width=130
-        ).pack(side="left", padx=(0, 10))
+        )
+        self.btn_categorias.pack(side="left", padx=(0, 10))
 
         # Segunda linha de botões
         second_row = ctk.CTkFrame(secondary_frame, fg_color="transparent")
@@ -656,13 +690,14 @@ class MainWindow:
         ).pack(side="left", padx=(0, 10))
 
         # ✅ NOVO BOTÃO: Robô Athos
-        ctk.CTkButton(
+        self.athos_button = ctk.CTkButton(
             second_row,
             text="🤖 Robô Athos",
             command=self.open_athos_window,
             height=40,
             width=130
-        ).pack(side="left", padx=(0, 10))
+        )
+        self.athos_button.pack(side="left", padx=(0, 10))
 
         # Status
         status_frame = ctk.CTkFrame(process_frame, fg_color="transparent")
@@ -685,6 +720,16 @@ class MainWindow:
         )
         self.progress_bar.pack(fill="x", pady=(5, 10))
         self.progress_bar.pack_forget()
+
+        # ✅ Indicadores de disponibilidade
+        self.supplier_status_var = tk.StringVar(value="")
+        ctk.CTkLabel(status_frame, textvariable=self.supplier_status_var, font=ctk.CTkFont(size=12), anchor="w", text_color=("gray70", "gray50")).pack(fill="x", pady=(0, 2))
+
+        self.categories_status_var = tk.StringVar(value="")
+        ctk.CTkLabel(status_frame, textvariable=self.categories_status_var, font=ctk.CTkFont(size=12), anchor="w", text_color=("gray70", "gray50")).pack(fill="x", pady=(0, 2))
+
+        self.athos_status_var = tk.StringVar(value="")
+        ctk.CTkLabel(status_frame, textvariable=self.athos_status_var, font=ctk.CTkFont(size=12), anchor="w", text_color=("gray70", "gray50")).pack(fill="x", pady=(0, 2))
 
     # =========================
     # Helpers UI
@@ -1167,20 +1212,61 @@ class MainWindow:
             messagebox.showerror("Erro", f"Não foi possível abrir a pasta:\n{e}")
 
     def show_supplier_manager(self):
-        """Mostra janela de gerenciamento de fornecedores"""
-        if not SUPPLIER_SYSTEM_AVAILABLE or not self.supplier_db:
-            messagebox.showerror(
-                "Erro",
-                "Sistema de fornecedores não está disponível.\n"
-                "Verifique se todos os arquivos foram criados corretamente."
+        """Mostra janela de gerenciamento de fornecedores (se disponível)."""
+        # Se o módulo UI não existe, já sinaliza
+        if not SUPPLIER_SYSTEM_AVAILABLE or SupplierManagerWindow is None:
+            messagebox.showinfo(
+                "Fornecedores (indisponível)",
+                "O módulo de Fornecedores não está disponível nesta instalação.\n"
+                "Se você precisar dele, instale as dependências e garanta que o arquivo "
+                "src/ui/components/supplier_manager.py exista."
+            )
+            return
+
+        # Se o backend (sqlite/arquivo/permissão) não está ok, não abre
+        try:
+            available = bool(getattr(self, "supplier_db_available", False)) and bool(getattr(self.processor, "supplier_db", None))
+        except Exception:
+            available = False
+
+        if not available:
+            motivo = getattr(self, "supplier_status_message", "") or "Indisponível"
+            messagebox.showinfo(
+                "Fornecedores (indisponível)",
+                "O banco de fornecedores está indisponível no momento.\n\n"
+                f"Motivo: {motivo}\n\n"
+                "O app continua funcionando normalmente — apenas o gerenciamento de fornecedores fica desativado."
             )
             return
 
         try:
-            SupplierManagerWindow(self.root, self.supplier_db_path)
+            # Reusa a instância do DB já inicializada no ProductProcessor
+            db = getattr(self.processor, "supplier_db", None)
+            if not db:
+                raise RuntimeError("supplier_db não inicializado")
+
+            # Evitar duplicar janela
+            if self.supplier_manager_window and hasattr(self.supplier_manager_window, "winfo_exists"):
+                try:
+                    if self.supplier_manager_window.winfo_exists():
+                        self.supplier_manager_window.focus()
+                        self.supplier_manager_window.lift()
+                        return
+                except Exception:
+                    pass
+
+            self.supplier_manager_window = SupplierManagerWindow(self.root, db)
         except Exception as e:
             logger.error(f"Erro ao abrir gerenciador de fornecedores: {e}")
-            messagebox.showerror("Erro", f"Não foi possível abrir o gerenciador:\n{e}")
+            messagebox.showerror("Erro", f"Não foi possível abrir o gerenciador de fornecedores:\n{e}")
+        finally:
+            # Atualiza status no UI, caso algo tenha mudado
+            try:
+                self.supplier_db_available = bool(self.processor.is_supplier_db_available())
+                self.supplier_status_message = getattr(self.processor, "supplier_status_message", "") or ""
+            except Exception:
+                pass
+            self.refresh_system_status()
 
     def show_category_manager(self):
         """Mostra janela de gerenciamento de categorias"""
@@ -1278,12 +1364,13 @@ class MainWindow:
             logger.warning("Nome da marca vazio, usando código padrão")
             return 0, "D'Rossi"
 
-        if not self.supplier_db:
+        db = getattr(getattr(self, 'processor', None), 'supplier_db', None)
+        if not db or not getattr(self, 'supplier_db_available', False):
             logger.warning("Banco de fornecedores não disponível, usando código padrão")
             return 0, brand_name
 
         try:
-            supplier = self.supplier_db.search_supplier_by_name(brand_name)
+            supplier = db.search_supplier_by_name(brand_name)
 
             if supplier:
                 logger.info(f"Fornecedor encontrado: '{brand_name}' → '{supplier.name}' (código: {supplier.code})")

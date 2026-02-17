@@ -16,72 +16,34 @@ from ..core.models import (
 from ..utils.logger import get_logger
 from .excel_reader import ExcelReader
 from .excel_writer import ExcelWriter
-from ..core.supplier_database import SupplierDatabase
-
 logger = get_logger("business_logic")
 
 class ProductProcessor:
     """Processador principal de produtos"""
 
     def __init__(self, config: AppConfig):
-        # ✅ IMPORT LOCAL PARA GARANTIR QUE FUNCIONE
-        from pathlib import Path
-        import sqlite3
+        """Inicializa o processador.
+
+        ⚠️ Importante: o módulo de fornecedores (SQLite) é **opcional**.
+        Se o Python não tiver sqlite3 ou se o arquivo do banco não existir,
+        o app não pode quebrar — apenas marca o recurso como indisponível.
+        """
 
         self.config = config
         self.reader = ExcelReader()
         self.writer = ExcelWriter()
 
-        # ✅ FORÇAR O CAMINHO CORRETO DO BANCO COM DADOS
-        supplier_db_path = Path("C:/Users/USER/Documents/cadastro_produtos_python/outputs/suppliers.db")
+        # =========================
+        # ✅ Fornecedores (SQLite) — opcional / fail-safe
+        # =========================
+        self.supplier_db = None
+        self.supplier_system_available = False
+        self.supplier_status_message = "Indisponível"
 
-        logger.info("🗄️ === DEBUG BANCO DE FORNECEDORES ===")
-        logger.info(f"  🎯 FORÇANDO caminho correto: {supplier_db_path}")
-        logger.info(f"  📄 Arquivo existe: {supplier_db_path.exists()}")
-
-        if supplier_db_path.exists():
-            logger.info(f"  📏 Tamanho: {supplier_db_path.stat().st_size} bytes")
-
-            # ✅ VERIFICAR SE TEM DADOS
-            try:
-                with sqlite3.connect(supplier_db_path) as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT COUNT(*) FROM suppliers")
-                    count = cursor.fetchone()[0]
-                    logger.success(f"  📊 Registros no banco correto: {count}")
-            except Exception as e:
-                logger.error(f"  ❌ Erro ao verificar dados: {e}")
-        else:
-            logger.error("  ❌ BANCO CORRETO NÃO ENCONTRADO!")
-
-        # ✅ INICIALIZAR BANCO COM CAMINHO CORRETO
-        self.supplier_db = SupplierDatabase(supplier_db_path)
-
-        # ✅ TESTE IMEDIATO
-        try:
-            test_suppliers = self.supplier_db.get_all_suppliers()
-            logger.info(f"  📊 Fornecedores carregados: {len(test_suppliers)}")
-
-            if len(test_suppliers) > 0:
-                logger.success("  ✅ Banco conectado com sucesso!")
-                for i, supplier in enumerate(test_suppliers[:3]):
-                    logger.info(f"    {i + 1}. {supplier.name} (Código: {supplier.code}, Prazo: {supplier.prazo_dias})")
-
-                # ✅ TESTAR BUSCA POR DMOV
-                dmov_test = self.supplier_db.search_supplier_by_name("DMOV")
-                if dmov_test:
-                    logger.success(
-                        f"  🎯 DMOV encontrado: {dmov_test.name} (Código: {dmov_test.code}, Prazo: {dmov_test.prazo_dias})")
-                else:
-                    logger.warning("  ⚠️ DMOV não encontrado na busca")
-            else:
-                logger.error("  ❌ BANCO AINDA VAZIO!")
-
-        except Exception as e:
-            logger.error(f"  ❌ Erro ao testar banco: {e}")
-
+        self._init_supplier_database_safe()
 
         # ✅ INICIALIZAR MOTOR DE PRECIFICAÇÃO SE HABILITADO
+
         self.cost_pricing_engine = None
         if config.enable_auto_pricing and config.cost_file_path:
             try:
@@ -97,6 +59,113 @@ class ProductProcessor:
         # ✅ INICIALIZAR CATEGORY MANAGER PARA ESTA CLASSE (BUSINESS LOGIC)
         self.category_manager = None
         self.init_category_manager()
+
+
+    # =========================
+    # ✅ Fornecedores (SQLite) — helpers
+    # =========================
+    def _init_supplier_database_safe(self) -> None:
+        """Inicializa SupplierDatabase com tolerância a falhas.
+
+        Regras:
+        - Se sqlite3 não existir no Python, não quebra.
+        - Se o arquivo do banco não existir, não quebra.
+        - Se o banco não abrir, não quebra.
+        """
+        try:
+            # sqlite3 pode não existir em builds custom
+            import sqlite3  # noqa: F401
+        except Exception as e:
+            self.supplier_status_message = f"Indisponível (sqlite3 ausente: {e})"
+            logger.warning(f"⚠️ Sistema de fornecedores indisponível: sqlite3 ausente ({e})")
+            self.supplier_db = None
+            self.supplier_system_available = False
+            return
+
+        try:
+            from ..core.supplier_database import SupplierDatabase  # import tardio (fail-safe)
+        except Exception as e:
+            self.supplier_status_message = f"Indisponível (módulo SupplierDatabase: {e})"
+            logger.warning(f"⚠️ Sistema de fornecedores indisponível: não consegui importar SupplierDatabase ({e})")
+            self.supplier_db = None
+            self.supplier_system_available = False
+            return
+
+        # garantir pasta de output
+        try:
+            if getattr(self.config, "output_dir", None):
+                Path(self.config.output_dir).mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+
+        # candidatos de caminho (ordem: config explícita → output_dir → outputs)
+        candidates = []
+        cfg_path = getattr(self.config, "suppliers_db_path", None) or getattr(self.config, "supplier_db_path", None)
+        if cfg_path:
+            candidates.append(Path(cfg_path))
+        if getattr(self.config, "output_dir", None):
+            candidates.append(Path(self.config.output_dir) / "suppliers.db")
+        candidates.append(Path("outputs") / "suppliers.db")
+
+        # escolhe o primeiro existente; se nenhum existir, escolhe o default em output_dir (para futuro)
+        db_path = None
+        for p in candidates:
+            try:
+                if p and p.exists():
+                    db_path = p
+                    break
+            except Exception:
+                continue
+        if db_path is None:
+            db_path = candidates[1] if len(candidates) > 1 else candidates[0]
+
+        # se não existe, marca indisponível (sem quebrar)
+        if not db_path.exists():
+            self.supplier_status_message = f"Indisponível (arquivo não encontrado: {db_path})"
+            logger.warning(f"⚠️ Banco de fornecedores não encontrado: {db_path} (seguindo sem fornecedores)")
+            self.supplier_db = None
+            self.supplier_system_available = False
+            return
+
+        # tenta abrir (teste rápido)
+        try:
+            import sqlite3
+            with sqlite3.connect(db_path) as conn:
+                cur = conn.cursor()
+                # tabela pode não existir (banco vazio/corrompido)
+                cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='suppliers'")
+                has_table = cur.fetchone() is not None
+                if not has_table:
+                    self.supplier_status_message = f"Indisponível (tabela 'suppliers' não existe em {db_path})"
+                    logger.warning(f"⚠️ Banco de fornecedores inválido: tabela 'suppliers' não existe ({db_path})")
+                    self.supplier_db = None
+                    self.supplier_system_available = False
+                    return
+        except Exception as e:
+            self.supplier_status_message = f"Indisponível (falha ao abrir {db_path}: {e})"
+            logger.warning(f"⚠️ Não consegui abrir o banco de fornecedores ({db_path}): {e}")
+            self.supplier_db = None
+            self.supplier_system_available = False
+            return
+
+        # inicializa wrapper
+        try:
+            self.supplier_db = SupplierDatabase(db_path)
+            self.supplier_system_available = True
+            self.supplier_status_message = f"Disponível ({db_path})"
+            try:
+                test = self.supplier_db.get_all_suppliers()
+                logger.info(f"🗄️ Fornecedores carregados: {len(test)} | DB: {db_path}")
+            except Exception:
+                logger.info(f"🗄️ Banco de fornecedores conectado | DB: {db_path}")
+        except Exception as e:
+            self.supplier_status_message = f"Indisponível (erro ao inicializar: {e})"
+            logger.warning(f"⚠️ Falha ao inicializar SupplierDatabase ({db_path}): {e}")
+            self.supplier_db = None
+            self.supplier_system_available = False
+
+    def is_supplier_db_available(self) -> bool:
+        return bool(self.supplier_system_available and self.supplier_db)
 
 
     # ===========================
@@ -1043,7 +1112,7 @@ class ProductProcessor:
                     logger.info("🔍 === BUSCANDO FORNECEDOR NO BANCO ===")
                     logger.info(f"  🏷️ Marca padrão: '{self.config.default_brand}'")
 
-                    supplier = self.supplier_db.search_supplier_by_name(self.config.default_brand)
+                    supplier = self.supplier_db.search_supplier_by_name(self.config.default_brand) if self.supplier_db else None
 
                     if supplier:
                         logger.success("  ✅ Fornecedor encontrado no banco!")

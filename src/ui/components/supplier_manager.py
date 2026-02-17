@@ -120,63 +120,35 @@ class SupplierManagerWindow:
     """Janela de gerenciamento de fornecedores"""
 
     ADMIN_PASSWORD = "172839"
-
     def __init__(self, parent, db_path: Path):
         self.parent = parent
-        self.db = SupplierDatabase(db_path)
+        self.db_path = Path(db_path)
+        self.db = None
+        self.db_available = False
         self.selected_supplier = None
 
-        # ✅ NOVO: Controle de modo de acesso
-        self.admin_mode = False
-        self.admin_authenticated = False
+        # ✅ Modo robusto: se não existir arquivo / não der pra abrir, não quebra o app
+        if not self.db_path.exists():
+            messagebox.showwarning(
+                "Fornecedores indisponível",
+                f"Banco de fornecedores não encontrado:\\n{self.db_path}\\n\\n"
+                "Este módulo ficará indisponível até o banco ser criado/baixado."
+            )
+            logger.warning(f"Banco de fornecedores ausente: {self.db_path}")
+            return
 
-        # ✅ SOLICITAR MODO DE ACESSO
-        if not self.request_access_mode():
-            return  # Usuário cancelou
-
-        self.setup_window()
-        self.load_suppliers()
-
-    def request_access_mode(self) -> bool:
-        """Solicita modo de acesso e autentica se necessário"""
-        # Mostrar diálogo de seleção
-        access_dialog = AccessModeDialog(self.parent)
-        self.parent.wait_window(access_dialog.dialog)
-
-        if not access_dialog.result:
-            return False  # Usuário cancelou
-
-        if access_dialog.result == "admin":
-            # Modo admin - solicitar senha
-            if self.authenticate_admin():
-                self.admin_mode = True
-                self.admin_authenticated = True
-                logger.info("Modo administrador ativado")
-                return True
-            else:
-                return False  # Senha incorreta ou cancelado
-        else:
-            # Modo busca
-            self.admin_mode = False
-            self.admin_authenticated = False
-            logger.info("Modo somente leitura ativado")
-            return True
-
-    def authenticate_admin(self) -> bool:
-        """Autentica administrador"""
-        dialog = ctk.CTkInputDialog(
-            text="Digite a senha de administrador:",
-            title="🔐 Autenticação Necessária"
-        )
-
-        password = dialog.get_input()
-
-        if password == self.ADMIN_PASSWORD:
-            return True
-        elif password is not None:  # Usuário não cancelou
-            messagebox.showerror("Erro", "Senha incorreta!")
-
-        return False
+        try:
+            self.db = SupplierDatabase(self.db_path)
+            self.db_available = True
+        except Exception as e:
+            messagebox.showwarning(
+                "Fornecedores indisponível",
+                f"Não foi possível abrir o banco de fornecedores:\\n{self.db_path}\\n\\nErro: {e}"
+            )
+            logger.error(f"Erro ao abrir banco de fornecedores: {e}")
+            self.db = None
+            self.db_available = False
+            return
 
     def setup_window(self):
         """Configura a janela"""

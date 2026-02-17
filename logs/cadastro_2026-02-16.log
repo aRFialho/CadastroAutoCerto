@@ -305,3 +305,15 @@
 2026-02-16 17:43:13 | INFO     | src.ui.main_window:__init__:80 - Banco de fornecedores inicializado: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
 2026-02-16 17:43:13 | SUCCESS  | src.services.category_manager:load_categories:50 - ✅ 0 categorias carregadas de C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
 2026-02-16 17:43:13 | INFO     | src.ui.main_window:__init__:95 - Gerenciador de categorias inicializado: C:\Users\USER\Documents\cadastro_produtos_python\data\DB_CATEGORIAS.json
+2026-02-16 23:42:48 | INFO     | src.ui.main_window:initialize_embedded_databases:173 - ✅ Banco Fornecedores copiado: outputs\suppliers.db → C:\Users\Administrator\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-16 23:42:48 | INFO     | src.ui.main_window:initialize_embedded_databases:173 - ✅ Banco Categorias copiado: outputs\DB_CATEGORIAS.json → C:\Users\Administrator\Documents\cadastro_produtos_python\outputs\DB_CATEGORIAS.json
+2026-02-16 23:42:48 | INFO     | src.processors.business_logic:__init__:38 - 🗄️ === DEBUG BANCO DE FORNECEDORES ===
+2026-02-16 23:42:48 | INFO     | src.processors.business_logic:__init__:39 -   🎯 FORÇANDO caminho correto: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-16 23:42:48 | INFO     | src.processors.business_logic:__init__:40 -   📄 Arquivo existe: False
+2026-02-16 23:42:48 | ERROR    | src.processors.business_logic:__init__:55 -   ❌ BANCO CORRETO NÃO ENCONTRADO!
+2026-02-16 23:57:43 | INFO     | src.ui.main_window:initialize_embedded_databases:175 - ℹ️ Banco Fornecedores já existe: C:\Users\Administrator\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-16 23:57:43 | INFO     | src.ui.main_window:initialize_embedded_databases:175 - ℹ️ Banco Categorias já existe: C:\Users\Administrator\Documents\cadastro_produtos_python\outputs\DB_CATEGORIAS.json
+2026-02-16 23:57:43 | INFO     | src.processors.business_logic:__init__:38 - 🗄️ === DEBUG BANCO DE FORNECEDORES ===
+2026-02-16 23:57:43 | INFO     | src.processors.business_logic:__init__:39 -   🎯 FORÇANDO caminho correto: C:\Users\USER\Documents\cadastro_produtos_python\outputs\suppliers.db
+2026-02-16 23:57:43 | INFO     | src.processors.business_logic:__init__:40 -   📄 Arquivo existe: False
+2026-02-16 23:57:43 | ERROR    | src.processors.business_logic:__init__:55 -   ❌ BANCO CORRETO NÃO ENCONTRADO!
