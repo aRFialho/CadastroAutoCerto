@@ -1,12 +1,13 @@
 MAPEAMENTO DO PROJETO — CadastroAuto (D'Rossi) v2.1
-Gerado em 2026-02-12 21:02:25
+Gerado em 2026-02-17 16:00:00
 
-1) VISÃO GERAL
-- App desktop (CustomTkinter) para processar planilhas de produtos (origem) e gerar uma planilha destino no padrão da loja/ERP.
-- Possui recursos adicionais: gerenciamento de fornecedores (SQLite), categorias (DB JSON protegido por senha), importação de catálogo/custos (SQLite), precificação automática opcional, e envio de relatório por e-mail.
+1) VISAO GERAL
+- App desktop (CustomTkinter) para processar planilhas de produtos (origem) e gerar uma planilha destino no padrao da loja/ERP.
+- Possui recursos adicionais: gerenciamento de fornecedores (SQLite), categorias (DB JSON protegido por senha), importacao de catalogo/custos (SQLite), precificacao automatica opcional, e envio de relatorio por e-mail.
+- Novo modulo: Robo Athos (Atualizar Imediatos) integrado na UI por abas e executado em thread, gerando 5 planilhas (template Athos) e um relatorio consolidado.
 
 2) ENTRYPOINTS / BOOTSTRAP
-- main.py: detecta execução como .exe (PyInstaller) vs script; ajusta sys.path; inicia UI via src.ui.main_window.MainWindow.
+- main.py: detecta execucao como .exe (PyInstaller) vs script; ajusta sys.path; inicia UI via src.ui.main_window.MainWindow.
   Fluxo: main() -> setup_paths() -> MainWindow() -> MainWindow.run().
 
 3) TREE DO PROJETO (resumo de arquivos)
@@ -42,6 +43,8 @@ CadastroAuto
 │   │   └── templates
 │   │       └── Planilha Destino.xlsx
 │   ├── services
+│   │   ├── athos_runner.py
+│   │   ├── athos_rules.py
 │   │   ├── catalog_importer.py
 │   │   ├── category_manager.py
 │   │   ├── costing_pricing_engine.py
@@ -49,6 +52,7 @@ CadastroAuto
 │   │   ├── email_sender.py
 │   │   └── product_importer.py
 │   ├── ui
+│   │   ├── athos_window.py
 │   │   ├── components
 │   │   │   ├── catalog_import_dialog.py
 │   │   │   ├── catalog_manager_window.py
@@ -104,78 +108,119 @@ CadastroAuto
 4.1 UI (src/ui)
 - MainWindow (src/ui/main_window.py):
   - Carrega config: core.config.load_config()
-  - Inicializa bancos embarcados (copiando templates/DBs para pasta de trabalho, quando necessário).
+  - Inicializa bancos embarcados (copiando templates/DBs para pasta de trabalho, quando necessario).
   - Cria o ProductProcessor(config) (processors.business_logic).
-  - Ações do usuário:
+  - Adota navegacao por abas via CTkTabview:
+    - Aba 1: "Cadastro Automatico" (fluxo antigo, mantido)
+    - Aba 2: "Robo Athos" (Atualizar Imediatos) embutido
+
+  Acoes do usuario (aba Cadastro Automatico):
     - Selecionar arquivo/aba -> refresh_sheet_list(), on_file_selected()
     - Iniciar processamento -> start_processing() -> run_processing() (thread separada + loop asyncio)
     - Abrir logs -> LogViewer / RealTimeLogViewer
     - Gerenciar fornecedores -> SupplierManagerWindow (usa core.supplier_database.SupplierDatabase)
     - Gerenciar categorias -> CategoryManagerWindow (usa services.category_manager.CategoryManager)
     - Gerenciar produtos DB -> ProductManagerWindow (usa core.product_database.ProductDatabase e services.product_importer)
-    - Gerenciar catálogo DB -> CatalogManagerWindow (usa core.product_catalog_database.ProductCatalogDatabase e services.catalog_importer)
+    - Gerenciar catalogo DB -> CatalogManagerWindow (usa core.product_catalog_database.ProductCatalogDatabase e services.catalog_importer)
     - Gerenciar custos DB -> CostsManagerWindow (usa core.costs_database.CostsDatabase e services.costs_importer)
 
-  Conexões críticas:
+  Conexoes criticas (aba Cadastro Automatico):
     MainWindow.run_processing() -> ProductProcessor.process_products(origin_file, sheet_name, callbacks, send_email)
     MainWindow.resolve_supplier_code() -> SupplierDatabase.search/get (define supplier_code e nome oficial)
 
+- AthosTabFrame (src/ui/athos_window.py):
+  - UI do Robo Athos embutida na aba "Robo Athos" (nao abre popup por padrao).
+  - Entradas:
+    - SQL export (Excel .xlsx/.xls)
+    - Whitelist (PRODUTOS.xls/.xlsx com lista de EANs imediatos)
+    - Template Athos (modelo .xlsx/.xlsm)
+    - Pasta de saida (selecionavel)
+  - Execucao:
+    - Roda em thread para nao travar UI
+    - Atualiza status_var, progress_bar e log_text incrementalmente
+    - Permite cancelar via flag cancel_requested (interrompe com erro controlado)
+
+  Fluxo:
+    Botao "Atualizar Imediatos" ->
+      _start_processing() valida inputs ->
+      thread -> _run_processing_thread() ->
+        instancia AthosRunner(output_dir) ->
+        runner.run(sql_export, whitelist, template, progress_callback) ->
+        exibe arquivos gerados + caminho do relatorio
+
 4.2 Processamento (src/processors)
-- ProductProcessor (processors/business_logic.py): orquestrador do pipeline.
-  Dependências:
+- ProductProcessor (processors/business_logic.py): orquestrador do pipeline do Cadastro Automatico.
+  Dependencias:
     - ExcelReader (processors/excel_reader.py) para ler planilha de origem
     - ExcelWriter (processors/excel_writer.py) para escrever planilha destino
     - SupplierDatabase (core/supplier_database.py) para resolver fornecedor/prazo
     - CategoryManager (services/category_manager.py) para mapear hierarquia de categorias (se habilitado)
-    - CostPricingEngine (services/costing_pricing_engine.py) para precificação automática (se habilitado)
-    - EmailSender (services/email_sender.py) para envio de relatório (se habilitado)
+    - CostPricingEngine (services/costing_pricing_engine.py) para precificacao automatica (se habilitado)
+    - EmailSender (services/email_sender.py) para envio de relatorio (se habilitado)
 
-  Pipeline (alto nível):
+  Pipeline (alto nivel):
     process_products()
       1) reader.read_products(origin_file, sheet_name) -> lista de ProductOrigin (models)
       2) (opcional) cost_pricing_engine.load_base_data(cost_file)
-      3) _process_produtos(products) -> gera ProductDestination + variações/loja_web/kits + erros
+      3) _process_produtos(products) -> gera ProductDestination + variacoes/loja_web/kits + erros
       4) writer.write_excel(..., template=resources/templates/Planilha Destino.xlsx) -> arquivo final em outputs
-      5) (opcional) EmailSender envia relatório (HTML) + anexo
+      5) (opcional) EmailSender envia relatorio (HTML) + anexo
 
-  Observações importantes achadas no código:
-    - O caminho do SupplierDatabase está FORÇADO em business_logic.py para:
-      C:/Users/USER/Documents/cadastro_produtos_python/outputs/suppliers.db
-      Isso pode divergir do caminho configurado/esperado no runtime (principalmente em outros PCs).
+  Observacoes importantes no codigo:
+    - Existe risco de caminho hardcoded do suppliers.db dentro do Processor divergir do caminho configurado em runtime (principalmente em outros PCs).
 
-- ExcelReader:
-  - Faz normalização de cabeçalhos e mapeamento flexível de colunas.
-  - Detecta colunas de EAN variação, tipo de produto, cor, anúncio, categoria etc.
-
-- ExcelWriter:
-  - Escreve múltiplas abas (Produtos, Variações, LojaWeb, Kits).
-  - Copia/espelha abas do template e mapeia colunas para manter layout padrão.
-
-4.3 Modelos e Configuração (src/core)
+4.3 Modelos e Configuracao (src/core)
 - models.py: define enums e dataclasses usados no pipeline (ProductOrigin, ProductDestination, VariationData, LojaWebData, KitData, ProcessingResult, AppConfig, EmailConfig etc.).
-- config.py: carrega config de assets/config/settings.json + overrides via variáveis de ambiente.
-- exceptions.py: erros específicos (ExcelProcessingError, ValidationError, EmailError...).
+- config.py: carrega config de assets/config/settings.json + overrides via variaveis de ambiente.
+- exceptions.py: erros especificos (ExcelProcessingError, ValidationError, EmailError...).
 
-4.4 Persistência / Bancos (src/core)
-- supplier_database.py (SQLite): CRUD de fornecedores + busca por nome/código + heurísticas (acrônimo, keywords, similaridade).
-- product_database.py (SQLite): banco local de produtos, assentos, pés/bases, componentes especiais, combinações, loja web.
-- product_catalog_database.py (SQLite): banco do catálogo (cod_aux, cod_barra etc).
+4.4 Persistencia / Bancos (src/core)
+- supplier_database.py (SQLite): CRUD de fornecedores + busca por nome/codigo + heuristicas (acronimo, keywords, similaridade).
+- product_database.py (SQLite): banco local de produtos, assentos, pes/bases, componentes especiais, combinacoes, loja web.
+- product_catalog_database.py (SQLite): banco do catalogo (cod_aux, cod_barra etc).
 - costs_database.py (SQLite): banco de custos por fornecedor + custos de produto, stats e busca.
 
-4.5 Serviços (src/services)
-- product_importer.py: importa estrutura avançada de produtos via Excel (detecção de seções, fórmulas, PÉS por grupo etc) e salva no ProductDatabase.
-- catalog_importer.py: importa catálogo (Excel) e grava no ProductCatalogDatabase.
+4.5 Servicos (src/services)
+- product_importer.py: importa estrutura avancada de produtos via Excel e salva no ProductDatabase.
+- catalog_importer.py: importa catalogo (Excel) e grava no ProductCatalogDatabase.
 - costs_importer.py: importa custos (Excel), faz auto-map de colunas e grava no CostsDatabase.
-- costing_pricing_engine.py: motor de precificação (interpreta códigos/linhas/TC, kits, regra dos 0,90 etc).
-- category_manager.py: gerencia DB de categorias em JSON (com senha), permite buscar path/hierarquia e importar de TXT.
-- email_sender.py: gera relatório HTML (usando template) e envia via SMTP SSL/TLS.
+- costing_pricing_engine.py: motor de precificacao.
+- category_manager.py: gerencia DB de categorias em JSON (com senha).
+- email_sender.py: gera relatorio HTML (usando template) e envia via SMTP SSL/TLS.
 
-4.6 Utilitários (src/utils)
-- logger.py: setup_logger()/get_logger() com níveis + logs em arquivo.
-- validators.py: validações (EAN, e-mail, arquivo Excel, normalizações).
+- athos_runner.py: runner do Robo Athos (pipeline do "Atualizar Imediatos").
+  Responsabilidades:
+    - Validar inputs (existencia de arquivos, extensoes suportadas)
+    - Ler SQL export (xlsx/xlsm via openpyxl; xls via pandas/xlrd se existir)
+    - Ler whitelist (xlsx/xls; recomenda xlsx quando xls falhar)
+    - Preparar pasta de saida
+    - Gerar 5 planilhas por copia do template Athos
+    - Aplicar regras e preencher somente a aba "PRODUTOS" (quando integrado com athos_rules)
+    - Gerar relatorio consolidado (txt)
+
+- athos_rules.py: motor de regras do Robo Athos.
+  Responsabilidades:
+    - Normalizar linhas do SQL export (dicts)
+    - Identificar EANs (PA/KIT/PAI) e atributos: marca, grupo3, prazo, estoque PA, etc.
+    - Aplicar regras de classificacao:
+      01 FORA_DE_LINHA
+      02 ESTOQUE_COMPARTILHADO
+      03 ENVIO_IMEDIATO
+      04 SEM_GRUPO
+      05 OUTLET
+    - Gerar saida por regra:
+      - Linhas de planilha (para preencher aba PRODUTOS do template Athos)
+      - Linhas de relatorio consolidado no modelo: EAN | TIPO | MARCA | GRUPO3 | ACAO
+    - Importante: a coluna TIPO (PA/KIT/PAI) e preenchida quando existir no template.
+
+4.6 Utilitarios (src/utils)
+- logger.py: setup_logger()/get_logger() com niveis + logs em arquivo.
+- validators.py: validacoes (EAN, e-mail, arquivo Excel, normalizacoes).
 - resource_manager.py: resolve caminhos de recursos (principalmente em build PyInstaller) e extrai template para uso.
 
-5) 'ÁRVORE' DE CONEXÕES (call tree do fluxo principal)
+5) ARVORE DE CONEXOES (call tree dos fluxos principais)
+
+5.1 Fluxo Cadastro Automatico (aba 1)
 main.py
 └── MainWindow (ui/main_window.py)
     ├── load_config (core/config.py) -> AppConfig
@@ -188,7 +233,7 @@ main.py
     │   ├── (opcional) CategoryManager (services/category_manager.py)
     │   └── process_products()
     │       ├── read_products() -> List[ProductOrigin]
-    │       ├── _process_produtos() -> destinos/variações/loja_web/kits
+    │       ├── _process_produtos() -> destinos/variacoes/loja_web/kits
     │       ├── write_excel() -> arquivo destino
     │       └── (opcional) EmailSender -> SMTP
     └── Componentes UI auxiliares
@@ -198,8 +243,127 @@ main.py
         ├── CatalogManagerWindow -> ProductCatalogDatabase + CatalogImporter
         └── CostsManagerWindow -> CostsDatabase + CostsImporter
 
-6) PONTOS QUE VALEM PARA UPGRADES (já pensando no próximo passo)
-- Remover/parametrizar caminho hardcoded do suppliers.db em ProductProcessor (usar config.output_dir).
-- Centralizar inicialização de DBs (supplier/product/catalog/costs) num único lugar, evitando caminhos divergentes entre UI e processor.
-- Criar uma camada 'repository/service' para separar regra de negócio da UI (facilita testes e upgrades).
-- Instrumentar logs por etapa (tempo de leitura, tempo de processamento, tempo de escrita) para debugar performance.
+5.2 Fluxo Robo Athos (aba 2)
+MainWindow (ui/main_window.py)
+└── CTkTabview
+    └── Tab "Robo Athos"
+        └── AthosTabFrame (ui/athos_window.py)
+            ├── valida arquivos (sql_export, whitelist, template, output_dir)
+            ├── cria thread
+            └── _run_processing_thread()
+                ├── AthosRunner(output_dir) (services/athos_runner.py)
+                └── AthosRunner.run()
+                    ├── _validate_inputs()
+                    ├── _read_excel_any() (SQL export)
+                    ├── _read_excel_any() (whitelist)
+                    ├── (quando integrado) AthosRulesEngine.apply_all() (services/athos_rules.py)
+                    ├── gerar 5 arquivos (01..05) usando template Athos
+                    ├── preencher somente aba PRODUTOS (por regra)
+                    └── escrever relatorio consolidado (txt)
+
+6) ROBO ATHOS — ESPECIFICACAO (atualizada)
+
+6.1 Objetivo
+- Implementar o fluxo "Atualizar Imediatos" como feature separada via aba:
+  - Importa SQL export (Excel), whitelist (PRODUTOS.xls/xlsx) e template Athos.
+  - Executa regras em ordem fixa e gera 5 planilhas + relatorio consolidado.
+
+6.2 UI (src/ui/athos_window.py)
+- Componente principal: AthosTabFrame (CTkFrame) embutivel.
+- Componentes:
+  - Secao Arquivos:
+    - SQL export
+    - Whitelist (lista de imediatos)
+    - Template Athos
+    - Pasta de saida
+  - Secao Acoes:
+    - Botao executar (thread)
+    - Botao cancelar (flag de cancelamento)
+  - Secao Log/Resultado:
+    - textbox com log incremental
+  - Rodape:
+    - status_var
+    - progress_bar
+
+6.3 Service Runner (src/services/athos_runner.py)
+- Entrada:
+  - sql_export_path
+  - whitelist_path
+  - template_path
+  - output_dir
+  - progress_callback
+- Saida:
+  - 5 arquivos Excel (copias do template Athos) nomeados por regra
+  - 1 relatorio consolidado txt
+- Ordem obrigatoria (fixa):
+  - FORA_DE_LINHA
+  - ESTOQUE_COMPARTILHADO
+  - ENVIO_IMEDIATO
+  - SEM_GRUPO
+  - OUTLET
+
+6.4 Motor de regras (src/services/athos_rules.py)
+- Entradas:
+  - sql_rows (linhas do export SQL em dict)
+  - whitelist_eans (set de EANs imediatos)
+- Saidas por regra:
+  - rows: linhas para preencher aba PRODUTOS (colunas tipicas: COD_BARRA, TIPO, GRUPO3, ESTOQUE_SEG, DATA_ENTREGA, SITE_DISPONIBILIDADE, PRODUTO_INATIVO e campos auxiliares opcionais)
+  - report: linhas para relatorio (EAN | TIPO | MARCA | GRUPO3 | ACAO)
+
+- Regras implementadas (resumo):
+  - FORA_DE_LINHA:
+    - PA com estoque_real <= 0: marcar PRODUTO_INATIVO em PA, KIT e PAI (quando existirem) e reportar "PRODUTO INATIVADO".
+  - ESTOQUE_COMPARTILHADO:
+    - Para itens ja no grupo3 "ESTOQUE COMPARTILHADO":
+      - KIT recebe prazo = prazo do PA
+      - PAI recebe prazo = maior prazo entre os itens do PAI
+  - ENVIO_IMEDIATO:
+    - Whitelist define quais PA entram no grupo3 "ENVIO IMEDIATO"
+    - Se item esta em ENVIO IMEDIATO mas nao esta na whitelist: remover do grupo3 e reportar
+    - Definicao de prazo/estoque_seg no PA conforme marca:
+      - Marcas imediata: prazo IMEDIATA (0) e estoque_seg = 0
+      - Marcas 3 dias: prazo 3 e estoque_seg = 1000
+      - Outras: prazo 1 e estoque_seg = 0
+    - KIT e PAI alinham com PA (grupo3 + prazo) quando existirem
+    - Regra especial de bloqueio (nao atualizar, apenas reportar):
+      - Se marca em {MOVEIS VILA RICA, COLIBRI MOVEIS, MADETEC, CAEMMUN, LINEA BRASIL} e todos do grupo PAI com PA <= 0:
+        - nao gerar linhas de planilha
+        - apenas reportar acao: "Colocar cod Fabricante, mudar para Estoque Compartilhado"
+  - SEM_GRUPO:
+    - Itens sem grupo3:
+      - Se PA > 0:
+        - se esta na whitelist -> enviar para ENVIO IMEDIATO (imediata)
+        - se nao esta na whitelist -> enviar para OUTLET (prazo 1)
+      - Se PA <= 0:
+        - manter sem grupo3, estoque_seg = 1000 e prazo fornecedor; KIT e PAI seguem o prazo do PA
+  - OUTLET:
+    - Itens no grupo3 OUTLET:
+      - Se PA <= 0: estoque_seg = 1000 e prazo fornecedor; KIT e PAI seguem o prazo
+      - Se PA > 0: estoque_seg = 0 e prazo conforme marca (imediata/3 dias/1 dia); KIT e PAI alinham
+
+6.5 Saidas geradas (na pasta de saida escolhida)
+- 01_FORA_DE_LINHA.xlsx
+- 02_ESTOQUE_COMPARTILHADO.xlsx
+- 03_ENVIO_IMEDIATO.xlsx
+- 04_SEM_GRUPO.xlsx
+- 05_OUTLET.xlsx
+- RELATORIO_CONSOLIDADO.txt
+
+6.6 Padrao do relatorio consolidado
+- Formato de linha:
+  EAN | TIPO(PA/KIT/PAI) | MARCA | GRUPO3 | ACAO
+- Exemplo de acoes:
+  - INCLUIDO 1000 ESTOQUE SEG
+  - INCLUIDO 0 ESTOQUE SEGURANCA
+  - RETIRADO DO GRUPO3 ENVIO IMEDIATO
+  - Colocar cod Fabricante, mudar para Estoque Compartilhado
+  - PRODUTO INATIVADO
+
+7) PONTOS QUE VALEM PARA UPGRADES (proximos passos)
+- Remover/parametrizar caminho hardcoded do suppliers.db no ProductProcessor (usar config.output_dir).
+- Centralizar inicializacao de DBs (supplier/product/catalog/costs) para evitar divergencia entre UI e processor.
+- No AthosRunner:
+  - Consolidar escrita na aba PRODUTOS com mapeamento automatico de colunas do template
+  - Padronizar normalizacao de colunas do SQL export (nomes de header) e validar existencia de colunas-chave
+  - Garantir deduplicacao e precedencia quando um mesmo EAN aparecer em mais de uma regra
+- Instrumentar logs por etapa (tempo de leitura, tempo de aplicacao de regras, tempo de escrita) para debugar performance.

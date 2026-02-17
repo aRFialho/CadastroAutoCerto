@@ -41,12 +41,12 @@ except ImportError:
     CategoryManager = None
     CATEGORY_SYSTEM_AVAILABLE = False
 
-# ✅ NOVO: Robô Athos (tela)
+# ✅ NOVO: Robô Athos (aba)
 try:
-    from .athos_window import AthosWindow
+    from .athos_window import AthosTabFrame
     ATHOS_SYSTEM_AVAILABLE = True
 except ImportError:
-    AthosWindow = None
+    AthosTabFrame = None
     ATHOS_SYSTEM_AVAILABLE = False
 
 logger = get_logger("main_window")
@@ -106,7 +106,7 @@ class MainWindow:
         self.supplier_manager_window = None
 
         # ✅ NOVO: janela do Robô Athos
-        self.athos_window = None
+        self.athos_tab_frame = None
 
         # ✅ CONFIGURAR UI POR ÚLTIMO
         self.setup_ui()
@@ -209,7 +209,7 @@ class MainWindow:
         """Callback quando a janela principal é fechada"""
         try:
             # ✅ FECHAR JANELAS FILHAS SEGURAMENTE
-            for attr_name in ['log_viewer', 'catalog_window', 'costs_window', 'progress_dialog', 'athos_window']:
+            for attr_name in ['log_viewer', 'catalog_window', 'costs_window', 'progress_dialog', 'athos_tab_frame']:
                 if hasattr(self, attr_name):
                     window = getattr(self, attr_name)
                     if window and hasattr(window, 'window') and window.window:
@@ -268,10 +268,19 @@ class MainWindow:
         )
         subtitle_label.pack(pady=(0, 20))
 
+
     def create_main_content(self):
-        """Cria o conteúdo principal"""
-        self.main_frame = ctk.CTkScrollableFrame(self.root)
-        self.main_frame.pack(fill="both", expand=True, padx=20, pady=10)
+        """Cria o conteúdo principal (com abas)"""
+        # ✅ Abas: Cadastro | Robô Athos
+        self.tabview = ctk.CTkTabview(self.root)
+        self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
+
+        self.tab_cadastro = self.tabview.add("Cadastro")
+        self.tab_athos = self.tabview.add("Robô Athos")
+
+        # ===== Aba Cadastro (UI atual) =====
+        self.main_frame = ctk.CTkScrollableFrame(self.tab_cadastro)
+        self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
 
         self.create_file_section()
         self.create_config_section()
@@ -279,9 +288,58 @@ class MainWindow:
         self.create_email_section()
         self.create_processing_section()
 
-    # =========================
-    # SEÇÕES (Arquivo/Config/Pricing/E-mail/Processamento)
-    # =========================
+        # ===== Aba Robô Athos =====
+        self.create_athos_tab()
+
+    def create_athos_tab(self):
+        """Cria o conteúdo da aba Robô Athos (embutido na própria aba)."""
+        container = ctk.CTkFrame(self.tab_athos)
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Header simples dentro da aba
+        title = ctk.CTkLabel(
+            container,
+            text="🤖 Robô Athos",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            anchor="w",
+        )
+        title.pack(fill="x", pady=(0, 6))
+
+        subtitle = ctk.CTkLabel(
+            container,
+            text="Importe SQL export + whitelist + template e gere as 5 planilhas + relatório (preenche somente a aba 'PRODUTOS').",
+            font=ctk.CTkFont(size=13),
+            text_color=("gray60", "gray40"),
+            anchor="w",
+            wraplength=900,
+            justify="left",
+        )
+        subtitle.pack(fill="x", pady=(0, 16))
+
+        if not ATHOS_SYSTEM_AVAILABLE or AthosTabFrame is None:
+            ctk.CTkLabel(
+                container,
+                text=("❌ UI do Robô Athos não disponível.\n"
+                      "Verifique se o arquivo src/ui/athos_window.py existe e exporta AthosTabFrame."),
+                text_color=("red", "red"),
+                justify="left",
+                wraplength=900,
+            ).pack(anchor="w", pady=(10, 0))
+            return
+
+        # Frame principal do Athos dentro da aba (sem abrir janela separada)
+        try:
+            self.athos_tab_frame = AthosTabFrame(container)
+            self.athos_tab_frame.pack(fill="both", expand=True)
+        except Exception as e:
+            logger.error(f"Erro ao montar AthosTabFrame: {e}")
+            ctk.CTkLabel(
+                container,
+                text=f"❌ Erro ao montar UI do Robô Athos: {e}",
+                text_color=("red", "red"),
+                justify="left",
+                wraplength=900,
+            ).pack(anchor="w", pady=(10, 0))
     def create_file_section(self):
         """Seção de seleção de arquivos"""
         files_frame = ctk.CTkFrame(self.main_frame)
@@ -562,7 +620,7 @@ class MainWindow:
                 btn_f.configure(state="disabled")
 
         # Status Categorias
-        status_c = getattr(self, "category_status_var", None)
+        status_c = getattr(self, "categories_status_var", None)
         btn_c = getattr(self, "btn_categorias", None)
         if getattr(self, "category_manager_available", False):
             if status_c:
@@ -688,16 +746,6 @@ class MainWindow:
             height=40,
             width=130
         ).pack(side="left", padx=(0, 10))
-
-        # ✅ NOVO BOTÃO: Robô Athos
-        self.athos_button = ctk.CTkButton(
-            second_row,
-            text="🤖 Robô Athos",
-            command=self.open_athos_window,
-            height=40,
-            width=130
-        )
-        self.athos_button.pack(side="left", padx=(0, 10))
 
         # Status
         status_frame = ctk.CTkFrame(process_frame, fg_color="transparent")
@@ -1323,35 +1371,7 @@ class MainWindow:
     # =========================
     # ✅ NOVO: Robô Athos
     # =========================
-    def open_athos_window(self):
-        """Abre a tela Robô Athos"""
-        if not ATHOS_SYSTEM_AVAILABLE or AthosWindow is None:
-            messagebox.showerror(
-                "Erro",
-                "Tela Robô Athos não está disponível.\n"
-                "Verifique se o arquivo src/ui/athos_window.py foi criado e os services athos_* existem."
-            )
-            return
 
-        try:
-            # Evitar duplicar janela
-            if self.athos_window and hasattr(self.athos_window, "winfo_exists"):
-                try:
-                    if self.athos_window.winfo_exists():
-                        self.athos_window.focus()
-                        self.athos_window.lift()
-                        return
-                except Exception:
-                    pass
-
-            self.athos_window = AthosWindow(self.root)
-        except Exception as e:
-            logger.error(f"Erro ao abrir Robô Athos: {e}")
-            messagebox.showerror("Erro", f"Não foi possível abrir Robô Athos:\n{e}")
-
-    # =========================
-    # Fornecedor
-    # =========================
     def resolve_supplier_code(self, brand_name: str) -> tuple[int, str]:
         """
         Resolve código e nome oficial do fornecedor baseado no nome da marca
