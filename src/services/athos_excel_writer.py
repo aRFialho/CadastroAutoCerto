@@ -1,228 +1,188 @@
 """
-Service: AthosExcelWriter
-Responsável por escrever no template Athos:
-- SEMPRE na aba "PRODUTOS"
-- Encontrar colunas por nome (robusto)
-- Limpar dados antigos (mantendo cabeçalho)
-- Inserir linhas com base em dicionários {coluna: valor}
+AthosExcelWriter
+- Abre o template (já copiado) e preenche apenas a aba "PRODUTOS"
+- Escreve relatório consolidado em .txt
 
-Obs:
-- Não assume posição fixa de colunas
-- Evita mexer em outras abas
+Foco:
+✅ preservar layout do template (só escreve valores)
+✅ robusto com headers (acha coluna por nome)
+✅ limpa linhas anteriores (dados) antes de escrever novos
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from ..utils.logger import get_logger
 
-logger_default = get_logger("athos_excel_writer")
+logger = get_logger("athos_excel_writer")
 
 
 @dataclass
-class ColumnMap:
-    """Mapeamento coluna->índice (1-based)"""
-    by_name: Dict[str, int]
-    header_row: int
-    first_data_row: int
+class SheetWriteResult:
+    rows_written: int
+    warnings: List[str]
 
 
 class AthosExcelWriter:
-    SHEET_NAME = "PRODUTOS"
-
-    # Aliases comuns (normalizados) -> nome canônico
-    # (Você pode ampliar depois sem quebrar nada)
-    CANONICAL_COLUMNS = {
-        "EAN": ["EAN", "CÓD BARRA", "COD BARRA", "CODBARRA", "CÓDIGO DE BARRAS", "CODIGO DE BARRAS"],
-        "ESTOQUE_SEG": ["ESTOQUE SEG", "ESTOQUE SEGURANÇA", "ESTOQUE SEGURANCA", "ESTOQUE DE SEGURANÇA"],
-        "DATA_ENTREGA": ["DATA ENTREGA", "DIAS PARA ENTREGA", "DIAS PRA ENTREGA", "PRAZO", "PRAZO ENTREGA"],
-        "SITE_DISP": ["SITE DISPONIBILIDADE", "SITE DISP", "DISPONIBILIDADE SITE", "DISPONIBILIDADE"],
-        "GRUPO3": ["GRUPO3", "NOME GRUPO3", "GRUPO 3"],
-        "GRUPO3_APAGAR": ["GRUPO3 APAGAR", "APAGAR GRUPO3", "REMOVER GRUPO3", "GRUPO3 REMOVER"],
-        "PRODUTO_INATIVO": ["PRODUTO INATIVO", "INATIVO", "ATIVO?"],
-        "COD_FABRICANTE": ["CÓD FABRICANTE", "COD FABRICANTE", "CODIGO FABRICANTE", "CÓDIGO FABRICANTE"],
-    }
-
-    def __init__(self, logger=logger_default):
-        self.logger = logger
+    def __init__(self) -> None:
+        pass
 
     # =========================
     # Public API
     # =========================
-    def clear_products_sheet(self, xlsx_path: Path) -> None:
-        """Limpa dados existentes na aba PRODUTOS (mantém cabeçalho)."""
-        wb, ws = self._open_wb_sheet(xlsx_path)
-        colmap = self._build_column_map(ws)
-
-        # Limpa da first_data_row até last
-        max_row = ws.max_row or colmap.first_data_row
-        if max_row >= colmap.first_data_row:
-            for r in range(colmap.first_data_row, max_row + 1):
-                for c in range(1, ws.max_column + 1):
-                    ws.cell(row=r, column=c).value = None
-
-        wb.save(xlsx_path)
-
-    def write_rows(self, xlsx_path: Path, rows: List[Dict[str, Any]], *, clear_before: bool = True) -> ColumnMap:
+    def write_rule_workbook(
+        self,
+        workbook_path: Path,
+        rows: List[Dict[str, Any]],
+        sheet_name: str = "PRODUTOS",
+        clear_existing_data: bool = True,
+    ) -> SheetWriteResult:
         """
-        Escreve lista de linhas (dicts).
-        keys do dict podem ser:
-        - nomes canônicos (EAN, ESTOQUE_SEG, DATA_ENTREGA, SITE_DISP, GRUPO3, GRUPO3_APAGAR, PRODUTO_INATIVO, COD_FABRICANTE)
-        - ou nomes "humanos" que existam no cabeçalho
-
-        Retorna ColumnMap para debug.
+        Escreve linhas na aba PRODUTOS do workbook.
+        - rows: lista de dicts {header_name: value}
+        - SEMPRE tenta preencher EAN/Cód Barra se existir header correspondente
         """
-        wb, ws = self._open_wb_sheet(xlsx_path)
-        colmap = self._build_column_map(ws)
+        workbook_path = Path(workbook_path)
+        if not workbook_path.exists():
+            raise FileNotFoundError(f"Workbook não encontrado: {workbook_path}")
 
-        if clear_before:
-            self._clear_ws_data(ws, colmap)
-
-        if not rows:
-            wb.save(xlsx_path)
-            return colmap
-
-        # escreve a partir de first_data_row
-        r = colmap.first_data_row
-        for item in rows:
-            self._write_one(ws, colmap, r, item)
-            r += 1
-
-        wb.save(xlsx_path)
-        return colmap
-
-    # =========================
-    # Internal
-    # =========================
-    def _open_wb_sheet(self, xlsx_path: Path):
         try:
             from openpyxl import load_workbook
         except Exception as e:
-            raise RuntimeError(f"openpyxl necessário para escrever no template: {e}")
+            raise RuntimeError(f"openpyxl não disponível: {e}")
 
-        wb = load_workbook(xlsx_path)
-        if self.SHEET_NAME not in wb.sheetnames:
+        wb = load_workbook(workbook_path)
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(f"Aba '{sheet_name}' não existe no template: {workbook_path.name}")
+
+        ws = wb[sheet_name]
+
+        header_row_idx, header_map = self._detect_header(ws)
+        if header_row_idx is None or not header_map:
             raise ValueError(
-                f"Template não possui aba '{self.SHEET_NAME}'. "
-                f"Abas encontradas: {wb.sheetnames}"
-            )
-        ws = wb[self.SHEET_NAME]
-        return wb, ws
-
-    def _normalize(self, s: str) -> str:
-        s = (s or "").strip().upper()
-        # normalização leve: remove múltiplos espaços
-        s = " ".join(s.split())
-        return s
-
-    def _find_header_row(self, ws, max_scan_rows: int = 30) -> int:
-        """
-        Encontra linha do cabeçalho procurando por 'EAN' ou 'CÓD BARRA' etc.
-        Se não achar, assume 1.
-        """
-        target_tokens = set(self._normalize(x) for x in self.CANONICAL_COLUMNS["EAN"])
-        for r in range(1, min(max_scan_rows, ws.max_row or 1) + 1):
-            values = [self._normalize(str(c.value)) if c.value is not None else "" for c in ws[r]]
-            if any(v in target_tokens for v in values):
-                return r
-        return 1
-
-    def _build_column_map(self, ws) -> ColumnMap:
-        header_row = self._find_header_row(ws)
-        headers = []
-        for cell in ws[header_row]:
-            headers.append(self._normalize(str(cell.value)) if cell.value is not None else "")
-
-        by_name: Dict[str, int] = {}
-
-        # 1) mapeia cabeçalho real
-        for idx, h in enumerate(headers, start=1):
-            if h:
-                by_name[h] = idx
-
-        # 2) mapeia nomes canônicos -> coluna existente (via aliases)
-        for canonical, aliases in self.CANONICAL_COLUMNS.items():
-            found_idx = None
-            for a in aliases:
-                a_norm = self._normalize(a)
-                if a_norm in by_name:
-                    found_idx = by_name[a_norm]
-                    break
-            if found_idx is not None:
-                by_name[canonical] = found_idx
-
-        # Validação mínima: precisa ter EAN
-        if "EAN" not in by_name:
-            # tenta encontrar qualquer alias de EAN mesmo se não mapeou acima
-            raise ValueError(
-                "Não encontrei a coluna EAN/Cód Barra no cabeçalho da aba PRODUTOS. "
-                "Confira se o template é o correto."
+                f"Não consegui detectar cabeçalho na aba '{sheet_name}'. "
+                f"Verifique se o template possui headers na primeira linha."
             )
 
-        # primeira linha de dados = header_row + 1 (padrão)
-        first_data_row = header_row + 1
-        return ColumnMap(by_name=by_name, header_row=header_row, first_data_row=first_data_row)
+        warnings: List[str] = []
 
-    def _clear_ws_data(self, ws, colmap: ColumnMap) -> None:
-        max_row = ws.max_row or colmap.first_data_row
-        if max_row < colmap.first_data_row:
+        # Limpar linhas existentes (mantendo cabeçalho)
+        if clear_existing_data:
+            self._clear_data_below_header(ws, header_row_idx)
+
+        # Escrever linhas
+        start_row = header_row_idx + 1
+        current_row = start_row
+
+        # normaliza keys de rows para bater com header_map
+        for item in rows:
+            if not item:
+                continue
+
+            # Preenche colunas por header (case-insensitive)
+            for k, v in item.items():
+                col_idx = self._find_col(header_map, k)
+                if col_idx is None:
+                    # ignorar colunas que não existem no template
+                    continue
+                ws.cell(row=current_row, column=col_idx, value=v)
+
+            current_row += 1
+
+        wb.save(workbook_path)
+
+        written = max(0, current_row - start_row)
+        logger.info(f"[AthosExcelWriter] {workbook_path.name} -> {written} linhas gravadas em '{sheet_name}'")
+        return SheetWriteResult(rows_written=written, warnings=warnings)
+
+    def write_report_txt(self, report_path: Path, lines: List[str]) -> None:
+        report_path = Path(report_path)
+        report_path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info(f"[AthosExcelWriter] Relatório gravado: {report_path.name}")
+
+    # =========================
+    # Internals
+    # =========================
+    def _normalize(self, s: Any) -> str:
+        if s is None:
+            return ""
+        return str(s).strip().lower()
+
+    def _detect_header(self, ws) -> tuple[Optional[int], Dict[str, int]]:
+        """
+        Detecta a linha de cabeçalho:
+        - procura a primeira linha que tenha pelo menos 2 células com texto
+        Retorna (row_index, {header_normalizado: col_index})
+        """
+        max_scan = min(ws.max_row or 200, 200)
+
+        best_row = None
+        best_count = 0
+        best_map: Dict[str, int] = {}
+
+        for r in range(1, max_scan + 1):
+            row_vals = [ws.cell(row=r, column=c).value for c in range(1, (ws.max_column or 50) + 1)]
+            texts = [self._normalize(v) for v in row_vals if v is not None and str(v).strip() != ""]
+            # heurística simples: cabeçalho costuma ter várias colunas preenchidas
+            if len(texts) >= 2 and len(texts) > best_count:
+                header_map: Dict[str, int] = {}
+                for c in range(1, (ws.max_column or 50) + 1):
+                    hv = ws.cell(row=r, column=c).value
+                    hs = self._normalize(hv)
+                    if hs:
+                        header_map[hs] = c
+                best_row = r
+                best_count = len(texts)
+                best_map = header_map
+
+        return best_row, best_map
+
+    def _clear_data_below_header(self, ws, header_row_idx: int) -> None:
+        """
+        Limpa valores das linhas abaixo do header (não mexe no estilo).
+        """
+        if ws.max_row is None or ws.max_row <= header_row_idx:
             return
 
-        for r in range(colmap.first_data_row, max_row + 1):
-            for c in range(1, ws.max_column + 1):
-                ws.cell(row=r, column=c).value = None
+        # define limite de colunas com base no header
+        max_col = ws.max_column or 50
 
-    def _resolve_col(self, colmap: ColumnMap, key: str) -> Optional[int]:
+        for r in range(header_row_idx + 1, (ws.max_row or header_row_idx) + 1):
+            empty_row = True
+            for c in range(1, max_col + 1):
+                cell = ws.cell(row=r, column=c)
+                if cell.value not in (None, ""):
+                    empty_row = False
+                    break
+            # se já estiver vazio, pode continuar (mas não para, porque pode ter buracos)
+            for c in range(1, max_col + 1):
+                ws.cell(row=r, column=c, value=None)
+
+    def _find_col(self, header_map: Dict[str, int], key: str) -> Optional[int]:
         """
-        Resolve coluna por:
-        - chave canônica (EAN, ESTOQUE_SEG, ...)
-        - nome exato do cabeçalho (normalizado)
+        Encontra coluna pelo nome do header (case-insensitive e tolerante).
         """
-        k = self._normalize(key)
+        nk = self._normalize(key)
+        if not nk:
+            return None
 
-        # se já é canônico
-        if k in colmap.by_name:
-            return colmap.by_name[k]
+        # match direto
+        if nk in header_map:
+            return header_map[nk]
 
-        # se é um canônico sem normalizar (ex.: 'DATA_ENTREGA')
-        if key in colmap.by_name:
-            return colmap.by_name[key]
+        # match tolerante: remove espaços múltiplos
+        nk2 = " ".join(nk.split())
+        if nk2 in header_map:
+            return header_map[nk2]
 
-        # tenta mapear aliases canônicos
-        for canonical, aliases in self.CANONICAL_COLUMNS.items():
-            if k == self._normalize(canonical):
-                return colmap.by_name.get(canonical)
-            if any(k == self._normalize(a) for a in aliases):
-                # se alias estiver no cabeçalho, resolve por ele
-                idx = colmap.by_name.get(k)
-                if idx is not None:
-                    return idx
-                return colmap.by_name.get(canonical)
+        # match por "contém" (ex.: "cód barra" vs "cod barra")
+        for hk, idx in header_map.items():
+            if nk2 == hk:
+                return idx
+            if nk2 and hk and (nk2 in hk or hk in nk2):
+                return idx
 
         return None
-
-    def _write_one(self, ws, colmap: ColumnMap, row_idx: int, item: Dict[str, Any]) -> None:
-        """
-        Escreve uma linha.
-        Se o dict tiver apenas {'EAN': '...'} funciona.
-        """
-        # primeiro: garantir EAN
-        if "EAN" not in item and "CÓD BARRA" not in item and "COD BARRA" not in item and "CODBARRA" not in item:
-            # tenta achar qualquer chave parecida
-            for k in list(item.keys()):
-                if self._normalize(k) in [self._normalize(x) for x in self.CANONICAL_COLUMNS["EAN"]]:
-                    item["EAN"] = item[k]
-                    break
-
-        if "EAN" not in item:
-            raise ValueError("Linha sem EAN/Cód Barra. EAN é obrigatório para aplicar alterações no Athos.")
-
-        for key, value in item.items():
-            col = self._resolve_col(colmap, key)
-            if col is None:
-                # ignora campos que não existem no template
-                continue
-            ws.cell(row=row_idx, column=col).value = value

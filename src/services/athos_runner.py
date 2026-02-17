@@ -1,15 +1,20 @@
 """
 Service: AthosRunner
+
 Responsável por:
 - Ler o export do SQL (Excel)
-- Ler whitelist (PRODUTOS.xls/.xlsx)
+- Ler whitelist (PRODUTOS.xls/.xlsx) -> lista de EANs "imediatos"
 - Abrir template Athos e gerar 5 planilhas (cada uma com aba 'PRODUTOS')
+- Aplicar regras e preencher SOMENTE a aba 'PRODUTOS' do template
 - Gerar relatório consolidado
 
-OBS:
-- Agora integra AthosExcelWriter para limpar e escrever na aba PRODUTOS.
-- Nesta fase, ainda NÃO aplicamos regras. Apenas valida template e pipeline:
-  -> escreve EANs (teste) nas 5 planilhas para você confirmar colunas/aba.
+Saídas geradas (na ordem):
+01_FORA_DE_LINHA.xlsx
+02_ESTOQUE_COMPARTILHADO.xlsx
+03_ENVIO_IMEDIATO.xlsx
+04_SEM_GRUPO.xlsx
+05_OUTLET.xlsx
+RELATORIO_CONSOLIDADO.txt
 """
 
 from __future__ import annotations
@@ -17,14 +22,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Callable, Optional, Any, Dict, List
+from typing import Callable, Optional, Any, Dict, List, Set
 
 import shutil
 
 from ..utils.logger import get_logger
-from .athos_excel_writer import AthosExcelWriter
 
 logger_default = get_logger("athos_runner")
+
 
 ProgressCallback = Callable[[float, str], None]
 
@@ -36,18 +41,6 @@ class AthosRunResult:
 
 
 class AthosRunner:
-    """
-    Runner principal do Robô Athos.
-
-    Nesta fase:
-    - valida entradas
-    - prepara outputs
-    - cria as 5 planilhas
-    - limpa e escreve EANs (teste) na aba PRODUTOS
-    - gera um relatório consolidado
-    """
-
-    # Ordem obrigatória definida por você
     RULE_ORDER = [
         "FORA_DE_LINHA",
         "ESTOQUE_COMPARTILHADO",
@@ -56,7 +49,6 @@ class AthosRunner:
         "OUTLET",
     ]
 
-    # Nomes de arquivo (saída)
     OUTPUT_NAMES = {
         "FORA_DE_LINHA": "01_FORA_DE_LINHA.xlsx",
         "ESTOQUE_COMPARTILHADO": "02_ESTOQUE_COMPARTILHADO.xlsx",
@@ -66,17 +58,10 @@ class AthosRunner:
         "RELATORIO": "RELATORIO_CONSOLIDADO.txt",
     }
 
-    # nome da coluna no export SQL (seu arquivo tem isso)
-    SQL_EAN_KEYS = ["codbarra_produto", "CODBARRA_PRODUTO", "CODBARRA_PRODUTO ".strip()]
-
     def __init__(self, output_dir: Path, logger=logger_default):
         self.output_dir = Path(output_dir)
         self.logger = logger
-        self.writer = AthosExcelWriter(logger=logger)
 
-    # =========================
-    # Public API
-    # =========================
     def run(
         self,
         sql_export_path: Path,
@@ -95,86 +80,53 @@ class AthosRunner:
 
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-        # 1) Carregar dados
         progress(0.08, "Lendo export do SQL...")
         sql_rows = self._read_excel_any(sql_export_path)
 
         progress(0.14, "Lendo whitelist...")
         whitelist_rows = self._read_excel_any(whitelist_path)
+        whitelist_eans = self._extract_whitelist_eans(whitelist_rows)
 
-        context: Dict[str, Any] = {
-            "sql_export_path": sql_export_path,
-            "whitelist_path": whitelist_path,
-            "template_path": template_path,
-            "sql_rows_count": len(sql_rows),
-            "whitelist_rows_count": len(whitelist_rows),
-        }
+        self.logger.info(f"[AthosRunner] SQL rows: {len(sql_rows)}")
+        self.logger.info(f"[AthosRunner] Whitelist EANs: {len(whitelist_eans)}")
 
-        self.logger.info(f"[AthosRunner] SQL rows: {context['sql_rows_count']}")
-        self.logger.info(f"[AthosRunner] Whitelist rows: {context['whitelist_rows_count']}")
+        progress(0.22, "Aplicando regras...")
+        from .athos_rules import AthosRulesEngine
 
-        # 2) Extrair EANs do SQL (teste)
-        progress(0.18, "Extraindo EANs do SQL (teste)...")
-        eans = self._extract_eans_from_sql(sql_rows)
-        context["sql_eans_count"] = len(eans)
+        engine = AthosRulesEngine()
+        outputs = engine.apply_all(sql_rows=sql_rows, whitelist_eans=whitelist_eans)
 
-        # Para não travar template/Excel pesado no começo, limitamos teste
-        TEST_LIMIT = 200
-        eans_test = eans[:TEST_LIMIT]
-        context["sql_eans_test_count"] = len(eans_test)
-
-        # 3) Gerar 5 planilhas (cópia do template) + limpar e escrever EAN
-        progress(0.22, "Gerando planilhas base (template)...")
+        progress(0.35, "Gerando planilhas...")
         generated_files: List[Path] = []
 
         for idx, rule_key in enumerate(self.RULE_ORDER, start=1):
-            pct = 0.22 + (idx / len(self.RULE_ORDER)) * 0.45
-            progress(pct, f"Preparando {rule_key.replace('_', ' ')}...")
+            pct = 0.35 + (idx / len(self.RULE_ORDER)) * 0.45
+            progress(pct, f"Escrevendo {rule_key.replace('_', ' ')}...")
 
             out_path = self.output_dir / self.OUTPUT_NAMES[rule_key]
             self._copy_template(template_path, out_path)
 
-            # ✅ limpar e escrever (teste)
-            try:
-                self.writer.write_rows(
-                    out_path,
-                    rows=[{"EAN": ean} for ean in eans_test],
-                    clear_before=True,
-                )
-            except Exception as e:
-                # deixa claro qual arquivo falhou (template errado, cabeçalho diferente etc.)
-                raise RuntimeError(
-                    f"Falha ao escrever na aba PRODUTOS do arquivo gerado: {out_path}\n"
-                    f"Motivo: {e}"
-                )
+            rule_out = outputs.get(rule_key)
+            rows_to_write = rule_out.rows if rule_out else []
 
+            self._fill_template_produtos(out_path, rows_to_write)
             generated_files.append(out_path)
 
-        # 4) Relatório consolidado
-        progress(0.72, "Gerando relatório consolidado...")
+        progress(0.86, "Gerando relatório consolidado...")
         report_path = self.output_dir / self.OUTPUT_NAMES["RELATORIO"]
-        self._write_report_placeholder(report_path, context)
-
-        # 5) Final
-        progress(0.90, "Finalizando...")
-        self.logger.info("[AthosRunner] Saídas geradas com teste de escrita na aba PRODUTOS (EAN).")
+        self._write_report(report_path, outputs, sql_export_path, whitelist_path, template_path)
 
         progress(1.0, "Concluído ✅")
         return AthosRunResult(generated_files=generated_files, report_path=report_path)
 
-    # =========================
-    # Validation & IO
-    # =========================
+    # ===== IO =====
     def _validate_inputs(self, sql_export_path: Path, whitelist_path: Path, template_path: Path) -> None:
         if not sql_export_path.exists():
             raise FileNotFoundError(f"Arquivo do SQL não encontrado: {sql_export_path}")
-
         if not whitelist_path.exists():
             raise FileNotFoundError(f"Whitelist não encontrada: {whitelist_path}")
-
         if not template_path.exists():
             raise FileNotFoundError(f"Template não encontrado: {template_path}")
-
         if template_path.suffix.lower() not in [".xlsx", ".xlsm"]:
             raise ValueError("Template precisa ser .xlsx ou .xlsm (modelo Athos).")
 
@@ -183,21 +135,14 @@ class AthosRunner:
 
     def _read_excel_any(self, path: Path) -> List[Dict[str, Any]]:
         suffix = path.suffix.lower()
-
         if suffix in [".xlsx", ".xlsm"]:
             return self._read_xlsx_openpyxl(path)
-
         if suffix == ".xls":
             return self._read_xls_pandas(path)
-
         raise ValueError(f"Formato não suportado: {suffix}. Use .xlsx/.xlsm (ou .xls com suporte xlrd).")
 
     def _read_xlsx_openpyxl(self, path: Path) -> List[Dict[str, Any]]:
-        try:
-            from openpyxl import load_workbook
-        except Exception as e:
-            raise RuntimeError(f"openpyxl não disponível para ler .xlsx: {e}")
-
+        from openpyxl import load_workbook
         wb = load_workbook(path, data_only=True)
         ws = wb.active
 
@@ -246,67 +191,96 @@ class AthosRunner:
         df = df.dropna(how="all")
         return df.to_dict(orient="records")
 
-    # =========================
-    # Helpers
-    # =========================
-    def _extract_eans_from_sql(self, sql_rows: List[Dict[str, Any]]) -> List[str]:
+    # ===== Template writing =====
+    def _fill_template_produtos(self, template_path: Path, rows: List[Dict[str, Any]]) -> None:
         """
-        Extrai codbarra_produto do export do SQL.
-        Faz dedupe preservando ordem.
+        Preenche SOMENTE a aba 'PRODUTOS' do template.
+        - Cabeçalho é lido na linha 1
+        - Escreve a partir da linha 2
+        - Limpa conteúdo antigo antes de escrever
         """
-        def norm_key(k: str) -> str:
-            return (k or "").strip().upper()
+        from openpyxl import load_workbook
 
-        # mapa de keys disponíveis
-        if not sql_rows:
-            return []
+        wb = load_workbook(template_path)
+        if "PRODUTOS" not in wb.sheetnames:
+            raise ValueError(f"Template não possui aba 'PRODUTOS': {template_path}")
 
-        keys = list(sql_rows[0].keys())
-        keys_norm = {norm_key(k): k for k in keys}
+        ws = wb["PRODUTOS"]
 
-        # tenta achar a chave real no arquivo
-        chosen_key = None
-        for candidate in self.SQL_EAN_KEYS:
-            c_norm = norm_key(candidate)
-            if c_norm in keys_norm:
-                chosen_key = keys_norm[c_norm]
-                break
-
-        if not chosen_key:
-            # fallback: tenta achar por "CODBARRA" + "PRODUTO"
-            for k in keys:
-                kn = norm_key(k)
-                if "CODBARRA" in kn and "PRODUTO" in kn:
-                    chosen_key = k
-                    break
-
-        if not chosen_key:
-            raise ValueError(
-                "Não encontrei a coluna de EAN no export do SQL. "
-                "Esperado algo como 'codbarra_produto' / 'CODBARRA_PRODUTO'. "
-                f"Colunas encontradas: {keys}"
-            )
-
-        seen = set()
-        out: List[str] = []
-        for row in sql_rows:
-            v = row.get(chosen_key)
-            if v is None:
+        headers = {}
+        for col in range(1, ws.max_column + 1):
+            val = ws.cell(row=1, column=col).value
+            if val is None:
                 continue
+            key = str(val).strip().upper()
+            if key:
+                headers[key] = col
+
+        if ws.max_row > 1:
+            ws.delete_rows(2, ws.max_row - 1)
+
+        for r_idx, r in enumerate(rows, start=2):
+            for k, v in r.items():
+                if v is None:
+                    continue
+                col = headers.get(str(k).strip().upper())
+                if not col:
+                    continue
+                ws.cell(row=r_idx, column=col).value = v
+
+        wb.save(template_path)
+
+    # ===== Whitelist =====
+    def _extract_whitelist_eans(self, rows: List[Dict[str, Any]]) -> Set[str]:
+        def norm_ean(v: Any) -> str:
+            if v is None:
+                return ""
             s = str(v).strip()
             if not s:
-                continue
-            if s in seen:
-                continue
-            seen.add(s)
-            out.append(s)
+                return ""
+            if s.endswith(".0"):
+                try:
+                    s = str(int(float(s)))
+                except Exception:
+                    pass
+            return s
 
-        return out
+        if not rows:
+            return set()
 
-    # =========================
-    # Report
-    # =========================
-    def _write_report_placeholder(self, report_path: Path, context: Dict[str, Any]) -> None:
+        sample = rows[0]
+        keys = [k for k in sample.keys() if k]
+        preferred = None
+        for k in keys:
+            ku = str(k).strip().upper()
+            if ku in ("EAN", "CODBARRA", "COD_BARRA", "COD. BARRA", "CÓD BARRA", "CODIGO_BARRA", "CODIGO DE BARRAS"):
+                preferred = k
+                break
+
+        eans: Set[str] = set()
+        for r in rows:
+            val = None
+            if preferred and preferred in r:
+                val = r.get(preferred)
+            else:
+                for k in keys:
+                    if r.get(k) is not None and str(r.get(k)).strip() != "":
+                        val = r.get(k)
+                        break
+            e = norm_ean(val)
+            if e:
+                eans.add(e)
+        return eans
+
+    # ===== Report =====
+    def _write_report(
+        self,
+        report_path: Path,
+        outputs: Dict[str, Any],
+        sql_export_path: Path,
+        whitelist_path: Path,
+        template_path: Path,
+    ) -> None:
         now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
 
         lines: List[str] = []
@@ -314,24 +288,40 @@ class AthosRunner:
         lines.append(f"Gerado em: {now}")
         lines.append("")
         lines.append("Entradas:")
-        lines.append(f"- SQL export: {context.get('sql_export_path')}")
-        lines.append(f"- Whitelist: {context.get('whitelist_path')}")
-        lines.append(f"- Template: {context.get('template_path')}")
+        lines.append(f"- SQL export: {sql_export_path}")
+        lines.append(f"- Whitelist: {whitelist_path}")
+        lines.append(f"- Template: {template_path}")
         lines.append("")
-        lines.append("Resumo de leitura:")
-        lines.append(f"- Linhas SQL (aprox): {context.get('sql_rows_count')}")
-        lines.append(f"- Linhas whitelist (aprox): {context.get('whitelist_rows_count')}")
-        lines.append(f"- EANs encontrados no SQL: {context.get('sql_eans_count', 0)}")
-        lines.append(f"- EANs escritos (teste): {context.get('sql_eans_test_count', 0)}")
-        lines.append("")
-        lines.append("Ordem de processamento configurada:")
+        lines.append("ORDEM DE PROCESSAMENTO:")
         for r in self.RULE_ORDER:
             lines.append(f"- {r}")
         lines.append("")
-        lines.append("Ações (fase atual):")
-        lines.append("- ✅ Planilhas geradas a partir do template.")
-        lines.append("- ✅ Aba 'PRODUTOS' limpa e preenchida com EANs (teste).")
-        lines.append("- ⏭️ Próximo passo: aplicar as regras e preencher colunas específicas por regra.")
+        lines.append("AÇÕES (todas as planilhas):")
+        lines.append("EAN | TIPO | MARCA | GRUPO3 | AÇÃO")
+        lines.append("-" * 80)
+
+        total = 0
+        for rule_key in self.RULE_ORDER:
+            rule_out = outputs.get(rule_key)
+            if not rule_out:
+                continue
+            report = getattr(rule_out, "report", []) or []
+            if not report:
+                continue
+
+            lines.append("")
+            lines.append(f"[{rule_key}]")
+            for r in report:
+                total += 1
+                lines.append(f"{r.ean} | {r.tipo} | {r.marca} | {r.grupo3} | {r.acao}")
+
+        lines.append("")
+        lines.append(f"Total de ações listadas: {total}")
+        lines.append("")
+        lines.append("Legenda rápida:")
+        lines.append("- PA = Produto acabado (codbarra_produto)")
+        lines.append("- KIT = Kit (codbarra_kit)")
+        lines.append("- PAI = Pai do Kit (codbarra_pai)")
         lines.append("")
 
         report_path.write_text("\n".join(lines), encoding="utf-8")

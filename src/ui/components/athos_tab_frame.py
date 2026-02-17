@@ -1,12 +1,11 @@
 """
-Tela: Robô Athos (ABA)
+Aba (Frame): Robô Athos
 - Importa arquivo(s) (SQL export / whitelist / template)
 - Executa geração das 5 planilhas + relatório (via service)
 - Mantém UI no padrão do projeto (CustomTkinter) e roda em thread
 
-Este módulo exporta:
-- AthosTabFrame (CTkFrame) -> usado dentro da aba do MainWindow
-- AthosWindow (CTkToplevel) -> opcional (pode ser usado se quiser abrir em janela separada)
+VERSÃO EMBUTÍVEL (para CTkTabView):
+✅ AthosTabFrame (CTkFrame) ao invés de CTkToplevel
 """
 
 from __future__ import annotations
@@ -18,23 +17,23 @@ import threading
 from pathlib import Path
 from datetime import datetime
 
-from ..core.config import load_config
-from ..utils.logger import get_logger
+from ...core.config import load_config
+from ...utils.logger import get_logger
 
-logger = get_logger("athos_ui")
+logger = get_logger("athos_tab")
 
 # ✅ Service
 try:
-    from ..services.athos_runner import AthosRunner  # type: ignore
+    from ...services.athos_runner import AthosRunner  # type: ignore
 except Exception:
     AthosRunner = None  # type: ignore
 
 
 class AthosTabFrame(ctk.CTkFrame):
-    """UI do Robô Athos para ser embutida em uma aba."""
+    """Frame do Robô Athos (para embutir em uma aba)"""
 
-    def __init__(self, master, **kwargs):
-        super().__init__(master, **kwargs)
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
 
         self.config_data = load_config()
 
@@ -69,9 +68,30 @@ class AthosTabFrame(ctk.CTkFrame):
     # UI
     # =========================
     def _build_ui(self):
+        # Header
+        header = ctk.CTkFrame(self, height=90)
+        header.pack(fill="x", padx=20, pady=(20, 10))
+        header.pack_propagate(False)
+
+        ctk.CTkLabel(
+            header,
+            text="🤖 Robô Athos",
+            font=ctk.CTkFont(size=26, weight="bold"),
+        ).pack(pady=(18, 2))
+
+        ctk.CTkLabel(
+            header,
+            text=(
+                "Geração de planilhas (Fora de Linha, Estoque Compartilhado, Envio Imediato, Sem Grupo, Outlet) + Relatório"
+            ),
+            font=ctk.CTkFont(size=13),
+            text_color=("gray60", "gray40"),
+            wraplength=980,
+        ).pack(pady=(0, 14))
+
         # Body
         body = ctk.CTkScrollableFrame(self)
-        body.pack(fill="both", expand=True)
+        body.pack(fill="both", expand=True, padx=20, pady=10)
 
         self._section_files(body)
         self._section_actions(body)
@@ -79,7 +99,7 @@ class AthosTabFrame(ctk.CTkFrame):
 
         # Footer status
         footer = ctk.CTkFrame(self, height=70)
-        footer.pack(fill="x", pady=(10, 0))
+        footer.pack(fill="x", padx=20, pady=(10, 20))
         footer.pack_propagate(False)
 
         status_row = ctk.CTkFrame(footer, fg_color="transparent")
@@ -196,7 +216,7 @@ class AthosTabFrame(ctk.CTkFrame):
             justify="left",
             text_color=("gray60", "gray40"),
             font=ctk.CTkFont(size=12),
-            wraplength=820,
+            wraplength=980,
         ).pack(anchor="w")
 
     def _section_logs(self, parent):
@@ -303,7 +323,7 @@ class AthosTabFrame(ctk.CTkFrame):
 
             if AthosRunner is None:
                 self._ui_log("❌ Service AthosRunner ainda não existe.")
-                self._ui_log("➡️ Próximo arquivo que vou te mandar: src/services/athos_runner.py")
+                self._ui_log("➡️ Certifique-se que existe: src/services/athos_runner.py")
                 self._ui_fail("Service não encontrado (athos_runner.py).")
                 return
 
@@ -410,21 +430,3 @@ class AthosTabFrame(ctk.CTkFrame):
             self.log_text.see("end")
         except Exception:
             pass
-
-
-class AthosWindow(ctk.CTkToplevel):
-    """Janela opcional do Robô Athos (embute o AthosTabFrame dentro)."""
-
-    def __init__(self, master):
-        super().__init__(master)
-        self.title("🤖 Robô Athos")
-        self.geometry("900x720")
-        self.minsize(820, 650)
-        self.transient(master)
-        self.lift()
-        self.focus_force()
-
-        frame = AthosTabFrame(self)
-        frame.pack(fill="both", expand=True, padx=12, pady=12)
-
-        self.protocol("WM_DELETE_WINDOW", self.destroy)
