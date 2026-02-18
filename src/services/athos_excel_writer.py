@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import unicodedata
 
 from ..utils.logger import get_logger
 
@@ -34,17 +35,12 @@ class AthosExcelWriter:
     # Public API
     # =========================
     def write_rule_workbook(
-        self,
-        workbook_path: Path,
-        rows: List[Dict[str, Any]],
-        sheet_name: str = "PRODUTOS",
-        clear_existing_data: bool = True,
+            self,
+            workbook_path: Path,
+            rows: List[Dict[str, Any]],
+            sheet_name: str = "PRODUTOS",
+            clear_existing_data: bool = True,
     ) -> SheetWriteResult:
-        """
-        Escreve linhas na aba PRODUTOS do workbook.
-        - rows: lista de dicts {header_name: value}
-        - SEMPRE tenta preencher EAN/Cód Barra se existir header correspondente
-        """
         workbook_path = Path(workbook_path)
         if not workbook_path.exists():
             raise FileNotFoundError(f"Workbook não encontrado: {workbook_path}")
@@ -54,9 +50,19 @@ class AthosExcelWriter:
         except Exception as e:
             raise RuntimeError(f"openpyxl não disponível: {e}")
 
-        wb = load_workbook(workbook_path)
+        # ✅ preserva macros quando for xlsm
+        keep_vba = workbook_path.suffix.lower() == ".xlsm"
+        wb = load_workbook(workbook_path, keep_vba=keep_vba, data_only=False)
+
         if sheet_name not in wb.sheetnames:
-            raise ValueError(f"Aba '{sheet_name}' não existe no template: {workbook_path.name}")
+            fallback = None
+            for cand in ("PRODUTOS", "PRODUTO", "Produtos", "Produto"):
+                if cand in wb.sheetnames:
+                    fallback = cand
+                    break
+            if fallback is None:
+                raise ValueError(f"Aba '{sheet_name}' não existe no template: {workbook_path.name}")
+            sheet_name = fallback
 
         ws = wb[sheet_name]
 
@@ -69,24 +75,19 @@ class AthosExcelWriter:
 
         warnings: List[str] = []
 
-        # Limpar linhas existentes (mantendo cabeçalho)
         if clear_existing_data:
             self._clear_data_below_header(ws, header_row_idx)
 
-        # Escrever linhas
         start_row = header_row_idx + 1
         current_row = start_row
 
-        # normaliza keys de rows para bater com header_map
         for item in rows:
             if not item:
                 continue
 
-            # Preenche colunas por header (case-insensitive)
             for k, v in item.items():
                 col_idx = self._find_col(header_map, k)
                 if col_idx is None:
-                    # ignorar colunas que não existem no template
                     continue
                 ws.cell(row=current_row, column=col_idx, value=v)
 
@@ -109,7 +110,16 @@ class AthosExcelWriter:
     def _normalize(self, s: Any) -> str:
         if s is None:
             return ""
-        return str(s).strip().lower()
+        text = str(s).strip().lower()
+
+        # remove acentos (Código -> codigo), melhora matching de headers
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if not unicodedata.combining(ch))
+
+        # normalizações úteis
+        text = text.replace("_", " ")
+        text = " ".join(text.split())
+        return text
 
     def _detect_header(self, ws) -> tuple[Optional[int], Dict[str, int]]:
         """
@@ -144,20 +154,14 @@ class AthosExcelWriter:
         """
         Limpa valores das linhas abaixo do header (não mexe no estilo).
         """
-        if ws.max_row is None or ws.max_row <= header_row_idx:
+        max_row = ws.max_row or 0
+        if max_row <= header_row_idx:
             return
 
-        # define limite de colunas com base no header
         max_col = ws.max_column or 50
 
-        for r in range(header_row_idx + 1, (ws.max_row or header_row_idx) + 1):
-            empty_row = True
-            for c in range(1, max_col + 1):
-                cell = ws.cell(row=r, column=c)
-                if cell.value not in (None, ""):
-                    empty_row = False
-                    break
-            # se já estiver vazio, pode continuar (mas não para, porque pode ter buracos)
+        for r in range(header_row_idx + 1, max_row + 1):
+            # limpa tudo, sem tentar adivinhar se a linha tá vazia
             for c in range(1, max_col + 1):
                 ws.cell(row=r, column=c, value=None)
 

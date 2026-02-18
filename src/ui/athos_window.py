@@ -51,6 +51,9 @@ class AthosTabFrame(ctk.CTkFrame):
         self.status_var = tk.StringVar(value="Pronto")
         self.progress_var = tk.DoubleVar(value=0.0)
 
+        # Opções
+        self.send_email_var = tk.BooleanVar(value=True)
+
         # UI
         self._build_ui()
 
@@ -122,13 +125,13 @@ class AthosTabFrame(ctk.CTkFrame):
             filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
         )
 
-        # Template
+        # ✅ Template (APENAS xlsx/xlsm, porque o runner valida isso)
         self._file_row(
             frame,
             label="Template Athos (planilha modelo) *",
             var=self.template_var,
             button_text="📂 Selecionar",
-            filetypes=[("Excel files", "*.xlsx *.xls"), ("All files", "*.*")],
+            filetypes=[("Excel files", "*.xlsx *.xlsm"), ("All files", "*.*")],
         )
 
         # Output dir
@@ -162,6 +165,13 @@ class AthosTabFrame(ctk.CTkFrame):
 
         btn_row = ctk.CTkFrame(frame, fg_color="transparent")
         btn_row.pack(fill="x", padx=18, pady=(0, 16))
+
+        # checkbox de e-mail
+        ctk.CTkCheckBox(
+            btn_row,
+            text="📧 Enviar automaticamente para rpa.athus@apoiocorp.com.br",
+            variable=self.send_email_var,
+        ).pack(side="top", anchor="w", pady=(0, 10))
 
         self.run_btn = ctk.CTkButton(
             btn_row,
@@ -251,10 +261,19 @@ class AthosTabFrame(ctk.CTkFrame):
             return
 
         # Validações simples
-        sql_path = Path(self.sql_export_var.get().strip()) if self.sql_export_var.get().strip() else None
-        wl_path = Path(self.whitelist_var.get().strip()) if self.whitelist_var.get().strip() else None
-        tpl_path = Path(self.template_var.get().strip()) if self.template_var.get().strip() else None
-        out_dir = Path(self.output_dir_var.get().strip()) if self.output_dir_var.get().strip() else None
+        sql_raw = self.sql_export_var.get().strip()
+        wl_raw = self.whitelist_var.get().strip()
+        tpl_raw = self.template_var.get().strip()
+        out_raw = self.output_dir_var.get().strip()
+
+        sql_path = Path(sql_raw) if sql_raw else None
+        wl_path = Path(wl_raw) if wl_raw else None
+        tpl_path = Path(tpl_raw) if tpl_raw else None
+
+        # ✅ out_dir não pode ser vazio nem "."
+        out_dir = Path(out_raw) if out_raw else None
+        if out_dir and str(out_dir).strip() in (".", ""):
+            out_dir = None
 
         missing = []
         if not sql_path or not sql_path.exists():
@@ -270,6 +289,16 @@ class AthosTabFrame(ctk.CTkFrame):
             messagebox.showerror("Campos obrigatórios", "Faltam itens:\n" + "\n".join(missing))
             return
 
+        # ✅ valida extensão do template (runner exige .xlsx/.xlsm)
+        tpl_ext = tpl_path.suffix.lower()
+        if tpl_ext not in (".xlsx", ".xlsm"):
+            messagebox.showerror(
+                "Template inválido",
+                "O template Athos precisa ser .xlsx ou .xlsm.\n"
+                "Dica: abra e salve o modelo como .xlsx/.xlsm."
+            )
+            return
+
         # Start thread
         self.processing = True
         self.cancel_requested = False
@@ -280,7 +309,7 @@ class AthosTabFrame(ctk.CTkFrame):
 
         thread = threading.Thread(
             target=self._run_processing_thread,
-            args=(sql_path, wl_path, tpl_path, out_dir),
+            args=(sql_path, wl_path, tpl_path, out_dir, bool(self.send_email_var.get())),
             daemon=True,
         )
         thread.start()
@@ -291,7 +320,9 @@ class AthosTabFrame(ctk.CTkFrame):
         self.cancel_requested = True
         self.status_var.set("Cancelamento solicitado...")
 
-    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path):
+    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path, send_email: bool):
+        import traceback
+
         try:
             started = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             self._ui_log(f"🚀 Início: {started}")
@@ -328,6 +359,7 @@ class AthosTabFrame(ctk.CTkFrame):
                 whitelist_path=wl_path,
                 template_path=tpl_path,
                 progress_callback=progress,
+                send_email=send_email,
             )
 
             self._ui_progress(1.0)
@@ -352,12 +384,37 @@ class AthosTabFrame(ctk.CTkFrame):
                 self._ui_log("🛑 Cancelado pelo usuário.")
                 self._ui_fail("Cancelado.")
             else:
-                self._ui_log(f"❌ RuntimeError: {e}")
+                # RuntimeError real (mostra stack)
+                tb = traceback.format_exc()
+                logger.error(f"Erro Runtime no Robô Athos: {e}\n{tb}")
+                self._ui_log("❌ ERRO (RuntimeError)")
+                self._ui_log(str(e))
+                self._ui_log("")
+                self._ui_log("📌 Stacktrace:")
+                self._ui_log(tb)
                 self._ui_fail("Erro no processamento.")
+                try:
+                    self._safe_after(0, lambda: messagebox.showerror("Robô Athos — Erro", f"{e}"))
+                except Exception:
+                    pass
+
         except Exception as e:
-            logger.error(f"Erro no Robô Athos: {e}")
-            self._ui_log(f"❌ Erro: {e}")
+            # Erro geral (mostra stack)
+            tb = traceback.format_exc()
+            logger.error(f"Erro no Robô Athos: {e}\n{tb}")
+
+            self._ui_log("❌ ERRO (Exception)")
+            self._ui_log(str(e))
+            self._ui_log("")
+            self._ui_log("📌 Stacktrace:")
+            self._ui_log(tb)
+
             self._ui_fail("Erro no processamento.")
+            try:
+                self._safe_after(0, lambda: messagebox.showerror("Robô Athos — Erro", f"{e}"))
+            except Exception:
+                pass
+
         finally:
             self._ui_reset_buttons()
 

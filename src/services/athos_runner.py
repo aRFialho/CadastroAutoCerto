@@ -22,14 +22,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Callable, Optional, Any, Dict, List, Set
+from typing import Callable, Optional, Any, Dict, List
 
 import shutil
+import re
 
 from ..utils.logger import get_logger
 
 logger_default = get_logger("athos_runner")
-
 
 ProgressCallback = Callable[[float, str], None]
 
@@ -62,12 +62,16 @@ class AthosRunner:
         self.output_dir = Path(output_dir)
         self.logger = logger
 
+    # =========================
+    # Public
+    # =========================
     def run(
         self,
         sql_export_path: Path,
         whitelist_path: Path,
         template_path: Path,
         progress_callback: Optional[ProgressCallback] = None,
+        send_email: bool = True,
     ) -> AthosRunResult:
         progress = progress_callback or (lambda p, m="": None)
 
@@ -83,43 +87,163 @@ class AthosRunner:
         progress(0.08, "Lendo export do SQL...")
         sql_rows = self._read_excel_any(sql_export_path)
 
+        # ✅ Lê whitelist pelo mesmo pipeline (suporta .xls/.xlsx) e extrai EANs por heurística
         progress(0.14, "Lendo whitelist...")
         whitelist_rows = self._read_excel_any(whitelist_path)
         whitelist_eans = self._extract_whitelist_eans(whitelist_rows)
+
+        if not whitelist_eans:
+            self.logger.warning(
+                "[AthosRunner] Nenhum EAN detectado na whitelist. "
+                "Verifique se existe coluna EAN/GTIN/COD_BARRA ou se a primeira coluna contém os códigos."
+            )
 
         self.logger.info(f"[AthosRunner] SQL rows: {len(sql_rows)}")
         self.logger.info(f"[AthosRunner] Whitelist EANs: {len(whitelist_eans)}")
 
         progress(0.22, "Aplicando regras...")
-        from .athos_rules import AthosRulesEngine
+        from .athos_rules_engine import process_rows
 
-        engine = AthosRulesEngine()
-        outputs = engine.apply_all(sql_rows=sql_rows, whitelist_eans=whitelist_eans)
+        # ✅ Instancia DB uma única vez (robusto e rápido)
+        supplier_db = None
+        try:
+            from ..core.supplier_database import SupplierDatabase
+            supplier_db = SupplierDatabase()
+        except Exception as e:
+            supplier_db = None
+            self.logger.warning(f"[AthosRunner] SupplierDatabase indisponível: {e}")
+
+        def prazo_lookup(marca: str) -> Optional[int]:
+            """Lookup de prazo por marca (sem quebrar o fluxo)."""
+            if not marca:
+                return None
+            if supplier_db is None:
+                return None
+            try:
+                s = supplier_db.search_supplier_by_name(marca)
+                prazo = getattr(s, "prazo_dias", None) if s else None
+                return int(prazo) if prazo is not None else None
+            except Exception:
+                return None
+
+        outputs = process_rows(
+            sql_rows=sql_rows,
+            whitelist_imediatos=whitelist_eans,
+            supplier_prazo_lookup=prazo_lookup,
+        )
 
         progress(0.35, "Gerando planilhas...")
+        from .athos_excel_writer import AthosExcelWriter
+        from .athos_models import ORDERED_RULES, RuleName
+
+        writer = AthosExcelWriter()
         generated_files: List[Path] = []
 
-        for idx, rule_key in enumerate(self.RULE_ORDER, start=1):
-            pct = 0.35 + (idx / len(self.RULE_ORDER)) * 0.45
-            progress(pct, f"Escrevendo {rule_key.replace('_', ' ')}...")
+        def action_to_row(a) -> Dict[str, Any]:
+            row: Dict[str, Any] = {
+                "Codigo de Barras": a.codbarra,
+                "Tipo": a.tipo.value if hasattr(a.tipo, "value") else str(a.tipo),
+            }
+            if a.grupo3 is not None:
+                row["Grupo3"] = a.grupo3
+            if a.estoque_seguranca is not None:
+                row["Estoque Seguranca"] = a.estoque_seguranca
+            if a.dias_entrega is not None:
+                row["Data Entrega"] = a.dias_entrega
+            if a.site_disponibilidade is not None:
+                row["Site Disponibilidade"] = a.site_disponibilidade
+            if a.produto_inativo is not None:
+                row["Produto Inativo"] = a.produto_inativo
+            return row
 
-            out_path = self.output_dir / self.OUTPUT_NAMES[rule_key]
+        rule_to_output = {
+            RuleName.FORA_DE_LINHA: "FORA_DE_LINHA",
+            RuleName.ESTOQUE_COMPARTILHADO: "ESTOQUE_COMPARTILHADO",
+            RuleName.ENVIO_IMEDIATO: "ENVIO_IMEDIATO",
+            RuleName.NENHUM_GRUPO: "SEM_GRUPO",
+            RuleName.OUTLET: "OUTLET",
+        }
+
+        for idx, rule in enumerate(ORDERED_RULES, start=1):
+            pct = 0.35 + (idx / len(ORDERED_RULES)) * 0.45
+            progress(pct, f"Escrevendo {rule.value}...")
+
+            key = rule_to_output[rule]
+            out_path = self.output_dir / self.OUTPUT_NAMES[key]
             self._copy_template(template_path, out_path)
 
-            rule_out = outputs.get(rule_key)
-            rows_to_write = rule_out.rows if rule_out else []
+            actions = outputs.actions_by_rule.get(rule, []) or []
+            rows_to_write = [action_to_row(a) for a in actions]
 
-            self._fill_template_produtos(out_path, rows_to_write)
+            # ✅ sheet_name tolerante: tenta PRODUTOS, mas o writer pode cair em fallback
+            writer.write_rule_workbook(
+                out_path,
+                rows_to_write,
+                sheet_name="PRODUTOS",
+                clear_existing_data=True,
+            )
+
             generated_files.append(out_path)
 
         progress(0.86, "Gerando relatório consolidado...")
         report_path = self.output_dir / self.OUTPUT_NAMES["RELATORIO"]
         self._write_report(report_path, outputs, sql_export_path, whitelist_path, template_path)
 
+        if send_email:
+            progress(0.92, "Enviando e-mail (RPA Athus)...")
+            try:
+                self._send_email_athos(generated_files)
+            except Exception as e:
+                self.logger.warning(f"⚠️ Falha ao enviar e-mail do Athos: {e}")
+
         progress(1.0, "Concluído ✅")
         return AthosRunResult(generated_files=generated_files, report_path=report_path)
 
-    # ===== IO =====
+    # =========================
+    # Whitelist parsing
+    # =========================
+    def _extract_whitelist_eans(self, whitelist_rows: List[Dict[str, Any]]) -> set[str]:
+        """
+        Extrai EANs da whitelist (PRODUTOS.xls/.xlsx) com heurística de coluna.
+        Aceita headers variados: EAN, GTIN, COD_BARRA, CODIGO_BARRA, CÓD BARRAS etc.
+        Normaliza removendo .0, espaços, hífens e mantendo apenas dígitos.
+        """
+
+        def norm(v: Any) -> str:
+            if v is None:
+                return ""
+            s = str(v).strip()
+            if s.endswith(".0"):
+                s = s[:-2]
+            s = re.sub(r"\D", "", s)
+            return s
+
+        if not whitelist_rows:
+            return set()
+
+        headers = list(whitelist_rows[0].keys())
+        header_norm = {h: re.sub(r"[^a-z0-9]+", "", str(h).lower()) for h in headers}
+
+        candidates: List[str] = []
+        for h, hn in header_norm.items():
+            if any(k in hn for k in ("ean", "gtin", "codbarras", "codigobarra", "codbarra", "barras", "barcode")):
+                candidates.append(h)
+
+        chosen = candidates[0] if candidates else (headers[0] if headers else None)
+        if not chosen:
+            return set()
+
+        eans: set[str] = set()
+        for row in whitelist_rows:
+            e = norm(row.get(chosen))
+            if e:
+                eans.add(e)
+
+        return eans
+
+    # =========================
+    # IO
+    # =========================
     def _validate_inputs(self, sql_export_path: Path, whitelist_path: Path, template_path: Path) -> None:
         if not sql_export_path.exists():
             raise FileNotFoundError(f"Arquivo do SQL não encontrado: {sql_export_path}")
@@ -191,92 +315,61 @@ class AthosRunner:
         df = df.dropna(how="all")
         return df.to_dict(orient="records")
 
-    # ===== Template writing =====
-    def _fill_template_produtos(self, template_path: Path, rows: List[Dict[str, Any]]) -> None:
+    # =========================
+    # E-mail Athos
+    # =========================
+    def _send_email_athos(self, attachments: List[Path]) -> None:
+        """Envia as planilhas geradas para o e-mail do RPA Athus.
+
+        Requisito do negócio:
+        - Para: rpa.athus@apoiocorp.com.br
+        - Assunto: DROSSI PRODUTOS
+        - Anexar todas as planilhas geradas
+
+        Observação: usa as credenciais SMTP já configuradas em assets/config/settings.json.
         """
-        Preenche SOMENTE a aba 'PRODUTOS' do template.
-        - Cabeçalho é lido na linha 1
-        - Escreve a partir da linha 2
-        - Limpa conteúdo antigo antes de escrever
-        """
-        from openpyxl import load_workbook
+        from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
+        from email.mime.base import MIMEBase
+        from email import encoders
+        import smtplib
+        import ssl
 
-        wb = load_workbook(template_path)
-        if "PRODUTOS" not in wb.sheetnames:
-            raise ValueError(f"Template não possui aba 'PRODUTOS': {template_path}")
+        from ..core.config import load_config
 
-        ws = wb["PRODUTOS"]
+        cfg = load_config()
+        if not cfg.email:
+            raise RuntimeError("Config de e-mail não encontrada em assets/config/settings.json")
 
-        headers = {}
-        for col in range(1, ws.max_column + 1):
-            val = ws.cell(row=1, column=col).value
-            if val is None:
+        to_addr = "rpa.athus@apoiocorp.com.br"
+
+        msg = MIMEMultipart()
+        msg["From"] = cfg.email.from_addr or cfg.email.username
+        msg["To"] = to_addr
+        msg["Subject"] = "DROSSI PRODUTOS"
+        msg.attach(MIMEText("Planilhas geradas pelo Robô Athos em anexo.", "plain", "utf-8"))
+
+        for fp in attachments:
+            if not fp.exists():
                 continue
-            key = str(val).strip().upper()
-            if key:
-                headers[key] = col
+            part = MIMEBase("application", "octet-stream")
+            part.set_payload(fp.read_bytes())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={fp.name}")
+            msg.attach(part)
 
-        if ws.max_row > 1:
-            ws.delete_rows(2, ws.max_row - 1)
+        context = ssl.create_default_context()
+        with smtplib.SMTP_SSL(cfg.email.smtp_host, cfg.email.smtp_port, context=context) as server:
+            server.login(cfg.email.username, cfg.email.password)
+            server.sendmail(msg["From"], [to_addr], msg.as_string())
 
-        for r_idx, r in enumerate(rows, start=2):
-            for k, v in r.items():
-                if v is None:
-                    continue
-                col = headers.get(str(k).strip().upper())
-                if not col:
-                    continue
-                ws.cell(row=r_idx, column=col).value = v
-
-        wb.save(template_path)
-
-    # ===== Whitelist =====
-    def _extract_whitelist_eans(self, rows: List[Dict[str, Any]]) -> Set[str]:
-        def norm_ean(v: Any) -> str:
-            if v is None:
-                return ""
-            s = str(v).strip()
-            if not s:
-                return ""
-            if s.endswith(".0"):
-                try:
-                    s = str(int(float(s)))
-                except Exception:
-                    pass
-            return s
-
-        if not rows:
-            return set()
-
-        sample = rows[0]
-        keys = [k for k in sample.keys() if k]
-        preferred = None
-        for k in keys:
-            ku = str(k).strip().upper()
-            if ku in ("EAN", "CODBARRA", "COD_BARRA", "COD. BARRA", "CÓD BARRA", "CODIGO_BARRA", "CODIGO DE BARRAS"):
-                preferred = k
-                break
-
-        eans: Set[str] = set()
-        for r in rows:
-            val = None
-            if preferred and preferred in r:
-                val = r.get(preferred)
-            else:
-                for k in keys:
-                    if r.get(k) is not None and str(r.get(k)).strip() != "":
-                        val = r.get(k)
-                        break
-            e = norm_ean(val)
-            if e:
-                eans.add(e)
-        return eans
-
-    # ===== Report =====
+    # =========================
+    # Report
+    # =========================
     def _write_report(
         self,
         report_path: Path,
-        outputs: Dict[str, Any],
+        outputs: Any,
         sql_export_path: Path,
         whitelist_path: Path,
         template_path: Path,
@@ -301,27 +394,21 @@ class AthosRunner:
         lines.append("-" * 80)
 
         total = 0
-        for rule_key in self.RULE_ORDER:
-            rule_out = outputs.get(rule_key)
-            if not rule_out:
-                continue
-            report = getattr(rule_out, "report", []) or []
-            if not report:
-                continue
-
-            lines.append("")
-            lines.append(f"[{rule_key}]")
-            for r in report:
-                total += 1
-                lines.append(f"{r.ean} | {r.tipo} | {r.marca} | {r.grupo3} | {r.acao}")
+        for r in outputs.report_lines:
+            total += 1
+            tipo = r.tipo.value if hasattr(r.tipo, "value") else str(r.tipo)
+            marca = r.marca or ""
+            grupo3 = r.grupo3 or ""
+            acao = r.acao or ""
+            lines.append(f"{r.codbarra} | {tipo} | {marca} | {grupo3} | {acao}")
 
         lines.append("")
         lines.append(f"Total de ações listadas: {total}")
         lines.append("")
         lines.append("Legenda rápida:")
-        lines.append("- PA = Produto acabado (codbarra_produto)")
-        lines.append("- KIT = Kit (codbarra_kit)")
-        lines.append("- PAI = Pai do Kit (codbarra_pai)")
+        lines.append("- PA = Produto acabado")
+        lines.append("- KIT = Kit")
+        lines.append("- PAI = Pai do Kit")
         lines.append("")
 
         report_path.write_text("\n".join(lines), encoding="utf-8")
