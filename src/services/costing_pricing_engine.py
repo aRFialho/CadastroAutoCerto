@@ -1,19 +1,18 @@
-# services/cost_pricing_engine.py
+# services/costing_pricing_engine.py
 
 import pandas as pd
 import re
 import math
 from pathlib import Path
 from typing import Dict, Any, Optional, Tuple
-from loguru import logger  # Usaremos loguru para consistência
+from loguru import logger
 
-
-# Considere criar uma exceção customizada se quiser um tratamento mais específico
-# class CostPricingError(Exception):
-#     pass
 
 class CostPricingEngine:
     """Motor de precificação de custos baseado em regras de negócio"""
+
+    # ✅ TCs válidos: inclui A+ e letras A..I
+    VALID_TCS = {"A+", "A", "B", "C", "D", "E", "F", "G", "H", "I"}
 
     def __init__(self, mode: str = "Fábrica"):
         """
@@ -21,7 +20,8 @@ class CostPricingEngine:
         :param mode: Modo de operação ('Fábrica' ou 'Fornecedor').
         """
         self.mode = mode
-        # Estrutura: {codigo: {tc: {A: dados, B: dados, C: dados}}}
+
+        # Estrutura: {codigo: {tc: dados}}
         self.base_data: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
         # Linhas específicas para modo Fábrica
@@ -32,6 +32,18 @@ class CostPricingEngine:
             'Cadeira': 25
         }
         logger.info(f"⚙️ CostPricingEngine inicializado no modo: '{self.mode}'")
+
+    def _normalize_tc(self, tc_raw: Any) -> str:
+        """Normaliza TC (ex.: 'a +' -> 'A+', ' d ' -> 'D')."""
+        if tc_raw is None:
+            return ""
+        if isinstance(tc_raw, float) and pd.isna(tc_raw):
+            return ""
+
+        tc = str(tc_raw).strip().upper()
+        tc = tc.replace(" ", "")       # "A +" -> "A+"
+        tc = tc.replace("＋", "+")     # plus unicode -> '+'
+        return tc
 
     def clean_currency_value(self, value: Any) -> float:
         """Limpar e converter valores monetários"""
@@ -58,7 +70,7 @@ class CostPricingEngine:
             return 0.0
 
     def load_base_data(self, base_file: Path) -> bool:
-        """Carregar dados da planilha base COM LÓGICA TC EXPANDIDA"""
+        """Carregar dados da planilha base (agora aceitando TC A+ e D/E/F etc.)"""
         try:
             if not base_file or not base_file.exists():
                 logger.warning(f"❌ Caminho do arquivo base de custos inválido ou arquivo não encontrado: {base_file}")
@@ -92,29 +104,31 @@ class CostPricingEngine:
                 has_ipi = 'IPI' in df.columns
                 has_preco_por = 'Preço Por' in df.columns
 
-                # ✅ TCs VÁLIDOS EXPANDIDOS
-                valid_tcs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']
-
-                # Processar dados COM SEPARAÇÃO POR TC EXPANDIDO
-                for index, row in df.iterrows():
+                # Processar dados separando por TC (inclui A+)
+                for _, row in df.iterrows():
                     codigo = str(row['Código Fabricante']).strip() if pd.notna(row['Código Fabricante']) else None
-                    tc = str(row['TC']).strip().upper() if pd.notna(row['TC']) else None
+                    tc = self._normalize_tc(row['TC'])
 
-                    if codigo and codigo != 'nan' and tc and tc in valid_tcs:  # ✅ USANDO LISTA EXPANDIDA
-                        # Inicializar estrutura do produto se não existir
-                        if codigo not in self.base_data:
-                            self.base_data[codigo] = {}
+                    if not codigo or codigo == 'nan':
+                        continue
 
-                        # Armazenar dados por TC (linha do tecido)
-                        self.base_data[codigo][tc] = {
-                            'custo_for': self.clean_currency_value(row['Custo For']),
-                            'custo_fre': self.clean_currency_value(row['Custo Fre']),
-                            'preco_de': self.clean_currency_value(row['Preço De']),
-                            'preco_por': self.clean_currency_value(row['Preço Por']) if has_preco_por else 0.0,
-                            'ipi': self.clean_currency_value(row['IPI']) if has_ipi else 0.0,
-                            'aba': sheet_name,
-                            'tc': tc
-                        }
+                    if not tc or tc not in self.VALID_TCS:
+                        # Se quiser logar casos inválidos, descomente:
+                        # logger.debug(f"  ❌ TC inválido/ignorado: codigo={codigo} tc='{tc}' aba='{sheet_name}'")
+                        continue
+
+                    if codigo not in self.base_data:
+                        self.base_data[codigo] = {}
+
+                    self.base_data[codigo][tc] = {
+                        'custo_for': self.clean_currency_value(row['Custo For']),
+                        'custo_fre': self.clean_currency_value(row['Custo Fre']),
+                        'preco_de': self.clean_currency_value(row['Preço De']),
+                        'preco_por': self.clean_currency_value(row['Preço Por']) if has_preco_por else 0.0,
+                        'ipi': self.clean_currency_value(row['IPI']) if has_ipi else 0.0,
+                        'aba': sheet_name,
+                        'tc': tc
+                    }
 
             excel_file.close()
             logger.success(f"✅ {len(self.base_data)} códigos de custos carregados com sucesso no modo '{self.mode}'.")
@@ -125,25 +139,39 @@ class CostPricingEngine:
             return False
 
     def extract_fabric_line_and_code(self, full_code: str) -> Tuple[str, str]:
-        """Extrair linha do tecido (TC) e código base - A, B, C, D, E, F, G, H, I"""
-        if not full_code or len(full_code) <= 1:
-            logger.debug(f"  ⚪ Código muito curto: '{full_code}' → TC padrão 'C'")
-            return full_code, 'C'
+        """Extrair linha do tecido (TC) e código base - suporta A+ e letras A..I"""
+        if not full_code:
+            logger.debug("  ⚪ Código vazio → TC padrão 'C'")
+            return "", "C"
 
-        last_char = full_code[-1].upper()
-        valid_tcs = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I']  # ✅ EXPANDIDO
+        cleaned = str(full_code).strip().upper()
+        cleaned = cleaned.replace(" ", "")
+        cleaned = cleaned.replace("＋", "+")
 
-        if last_char in valid_tcs:
-            fabric_line = last_char
-            base_code = full_code[:-1]
+        # ✅ Caso especial: sufixo A+ (2 caracteres)
+        if cleaned.endswith("A+") and len(cleaned) > 2:
+            base_code = cleaned[:-2]
+            fabric_line = "A+"
             logger.debug(f"  🎯 TC VÁLIDO detectado: '{full_code}' → Base: '{base_code}' + TC: '{fabric_line}'")
-        else:
-            fabric_line = 'C'  # Padrão
-            base_code = full_code  # Código completo
-            logger.debug(
-                f"  ❌ TC INVÁLIDO: '{full_code}' (última letra: '{last_char}' não está em {valid_tcs}) → Código completo + TC padrão 'C'")
+            return base_code, fabric_line
 
-        return base_code, fabric_line
+        # ✅ Caso padrão: última letra A..I
+        if len(cleaned) <= 1:
+            logger.debug(f"  ⚪ Código muito curto: '{full_code}' → TC padrão 'C'")
+            return cleaned, "C"
+
+        last_char = cleaned[-1]
+        valid_single_tcs = {t for t in self.VALID_TCS if len(t) == 1}  # A..I
+
+        if last_char in valid_single_tcs:
+            base_code = cleaned[:-1]
+            fabric_line = last_char
+            logger.debug(f"  🎯 TC VÁLIDO detectado: '{full_code}' → Base: '{base_code}' + TC: '{fabric_line}'")
+            return base_code, fabric_line
+
+        # Fallback
+        logger.debug(f"  ❌ TC INVÁLIDO: '{full_code}' (sufixo não reconhecido) → Código completo + TC padrão 'C'")
+        return cleaned, "C"
 
     def get_product_data_by_tc(self, code: str, tc: str) -> Optional[Dict[str, Any]]:
         """Obter dados de um produto específico por TC"""
@@ -152,11 +180,10 @@ class CostPricingEngine:
         return None
 
     def process_simple_code(self, code: str, fabric_line: str) -> Dict[str, Any]:
-        """Processar código simples COM BUSCA POR TC"""
+        """Processar código simples com busca por TC"""
         product_data = self.get_product_data_by_tc(code, fabric_line)
 
         if product_data:
-            # Calcular os valores finais para o produto na linha específica
             vr_custo_total = product_data['custo_for']
             custo_frete = product_data['custo_fre']
             custo_ipi = product_data['ipi']
@@ -170,8 +197,11 @@ class CostPricingEngine:
                 'preco_de_venda': preco_de_venda,
                 'preco_promocao': preco_promocao,
                 'found': True,
-                'detail': f"Encontrado {code}(TC {fabric_line}): For R$ {vr_custo_total:.2f}, Fre R$ {custo_frete:.2f}" + (
-                    f", IPI R$ {custo_ipi:.2f}" if custo_ipi > 0 else "")
+                'detail': (
+                    f"Encontrado {code}(TC {fabric_line}): "
+                    f"For R$ {vr_custo_total:.2f}, Fre R$ {custo_frete:.2f}"
+                    + (f", IPI R$ {custo_ipi:.2f}" if custo_ipi > 0 else "")
+                )
             }
 
         return {
@@ -185,7 +215,7 @@ class CostPricingEngine:
         }
 
     def process_multiplied_code(self, multiplier: float, code: str, fabric_line: str) -> Dict[str, Any]:
-        """Processar código com multiplicador COM TC"""
+        """Processar código com multiplicador com TC"""
         simple_result = self.process_simple_code(code, fabric_line)
 
         if simple_result['found']:
@@ -202,7 +232,7 @@ class CostPricingEngine:
         return simple_result
 
     def process_kit_with_bars(self, kit_str: str) -> Dict[str, Any]:
-        """Processar kit com barras COM TC"""
+        """Processar kit com barras usando o TC do sufixo do código do kit (inclui A+)"""
         base_kit, fabric_line = self.extract_fabric_line_and_code(kit_str)
         components = base_kit.split('/')
 
@@ -234,7 +264,7 @@ class CostPricingEngine:
                         detail_parts.append(f"{component}: FORMATO MULTIPLICADOR INVÁLIDO")
                         continue
 
-            # Processar cada componente do kit
+            # Processar cada componente do kit com o TC do kit
             simple_result = self.process_simple_code(actual_code, fabric_line)
 
             if simple_result['found']:
@@ -256,7 +286,10 @@ class CostPricingEngine:
                 'preco_de_venda': total_preco_de_venda,
                 'preco_promocao': total_preco_promocao,
                 'found': True,
-                'detail': f"Kit TC {fabric_line} processado ({components_found}/{len(components)} encontrados): {' | '.join(detail_parts)}"
+                'detail': (
+                    f"Kit TC {fabric_line} processado ({components_found}/{len(components)} encontrados): "
+                    f"{' | '.join(detail_parts)}"
+                )
             }
 
         return {
@@ -270,18 +303,25 @@ class CostPricingEngine:
         }
 
     def process_code(self, code_str: Optional[str]) -> Dict[str, Any]:
-        """Função unificada para processar qualquer tipo de código COM TC"""
-        if not code_str or pd.isna(code_str) or str(code_str).strip() == '':
-            return {'vr_custo_total': 0.0, 'custo_frete': 0.0, 'custo_ipi': 0.0, 'preco_de_venda': 0.0,
-                    'preco_promocao': 0.0, 'found': False, 'detail': "Código vazio"}
+        """Função unificada para processar qualquer tipo de código com TC (inclui A+)"""
+        if not code_str or (isinstance(code_str, float) and pd.isna(code_str)) or str(code_str).strip() == '':
+            return {
+                'vr_custo_total': 0.0,
+                'custo_frete': 0.0,
+                'custo_ipi': 0.0,
+                'preco_de_venda': 0.0,
+                'preco_promocao': 0.0,
+                'found': False,
+                'detail': "Código vazio"
+            }
 
         code_str_cleaned = str(code_str).strip()
 
-        # 1. VERIFICAR SE É KIT (tem barras /)
+        # 1) KIT
         if '/' in code_str_cleaned:
             return self.process_kit_with_bars(code_str_cleaned)
 
-        # 2. VERIFICAR SE TEM MULTIPLICADOR (*)
+        # 2) MULTIPLICADOR
         if '*' in code_str_cleaned:
             parts = code_str_cleaned.split('*')
             if len(parts) == 2:
@@ -291,11 +331,17 @@ class CostPricingEngine:
                     base_code, fabric_line = self.extract_fabric_line_and_code(base_code_with_line)
                     return self.process_multiplied_code(multiplier, base_code, fabric_line)
                 except ValueError:
-                    return {'vr_custo_total': 0.0, 'custo_frete': 0.0, 'custo_ipi': 0.0, 'preco_de_venda': 0.0,
-                            'preco_promocao': 0.0, 'found': False,
-                            'detail': f"Formato de multiplicador inválido: {code_str_cleaned}"}
+                    return {
+                        'vr_custo_total': 0.0,
+                        'custo_frete': 0.0,
+                        'custo_ipi': 0.0,
+                        'preco_de_venda': 0.0,
+                        'preco_promocao': 0.0,
+                        'found': False,
+                        'detail': f"Formato de multiplicador inválido: {code_str_cleaned}"
+                    }
 
-        # 3. CÓDIGO SIMPLES
+        # 3) CÓDIGO SIMPLES
         base_code, fabric_line = self.extract_fabric_line_and_code(code_str_cleaned)
         return self.process_simple_code(base_code, fabric_line)
 

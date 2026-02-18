@@ -140,6 +140,22 @@ class SupplierManagerWindow:
         try:
             self.db = SupplierDatabase(self.db_path)
             self.db_available = True
+            # Escolher modo de acesso
+            dlg = AccessModeDialog(self.parent)
+            self.parent.wait_window(dlg.dialog)
+
+            if dlg.result == "admin":
+                senha = tk.simpledialog.askstring("Senha Admin", "Digite a senha:", show="*")
+                if senha != self.ADMIN_PASSWORD:
+                    messagebox.showwarning("Acesso Negado", "Senha incorreta. Abrindo em modo consulta.")
+                    self.admin_mode = False
+                else:
+                    self.admin_mode = True
+            else:
+                self.admin_mode = False
+
+            self.setup_window()
+            self.load_suppliers()
         except Exception as e:
             messagebox.showwarning(
                 "Fornecedores indisponível",
