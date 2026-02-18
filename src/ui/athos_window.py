@@ -320,40 +320,15 @@ class AthosTabFrame(ctk.CTkFrame):
         self.cancel_requested = True
         self.status_var.set("Cancelamento solicitado...")
 
-    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path, send_email: bool):
-        import traceback
-
+    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path):
         try:
-            started = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            self._ui_log(f"🚀 Início: {started}")
-            self._ui_log(f"SQL export: {sql_path}")
-            self._ui_log(f"Whitelist: {wl_path}")
-            self._ui_log(f"Template: {tpl_path}")
-            self._ui_log(f"Saída: {out_dir}")
-            self._ui_status("Validando serviço...")
+            runner = AthosRunner(output_dir=out_dir)
 
-            if AthosRunner is None:
-                self._ui_log("❌ Service AthosRunner ainda não existe.")
-                self._ui_log("➡️ Próximo arquivo que vou te mandar: src/services/athos_runner.py")
-                self._ui_fail("Service não encontrado (athos_runner.py).")
-                return
+            def progress(pct: float, msg: str = ""):
+                self._ui_progress(pct, msg)
 
-            out_dir.mkdir(parents=True, exist_ok=True)
+            send_email = bool(self.send_email_var.get())
 
-            runner = AthosRunner(
-                output_dir=out_dir,
-                logger=logger,
-            )
-
-            def progress(p: float, msg: str = ""):
-                if self.cancel_requested:
-                    raise RuntimeError("CANCELLED_BY_USER")
-                p = max(0.0, min(1.0, float(p)))
-                self._ui_progress(p)
-                if msg:
-                    self._ui_status(msg)
-
-            self._ui_status("Executando regras...")
             result = runner.run(
                 sql_export_path=sql_path,
                 whitelist_path=wl_path,
@@ -362,62 +337,34 @@ class AthosTabFrame(ctk.CTkFrame):
                 send_email=send_email,
             )
 
-            self._ui_progress(1.0)
-            self._ui_status("Concluído ✅")
+            self._ui_log("✅ Finalizado com sucesso!")
+            self._ui_log(f"Arquivos gerados: {len(result.generated_files)}")
+            if result.report_path:
+                self._ui_log(f"Relatório: {result.report_path}")
 
-            self._ui_log("")
-            self._ui_log("✅ Arquivos gerados:")
-            for p in getattr(result, "generated_files", []) or []:
-                self._ui_log(f" - {p}")
-
-            report_path = getattr(result, "report_path", None)
-            if report_path:
-                self._ui_log(f"🧾 Relatório: {report_path}")
-
-            finished = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-            self._ui_log(f"🏁 Fim: {finished}")
-
-            self._ui_done("Processamento concluído com sucesso!")
+            self._ui_done("Concluído ✅")
 
         except RuntimeError as e:
+            import traceback
             if str(e) == "CANCELLED_BY_USER":
                 self._ui_log("🛑 Cancelado pelo usuário.")
                 self._ui_fail("Cancelado.")
             else:
-                # RuntimeError real (mostra stack)
                 tb = traceback.format_exc()
-                logger.error(f"Erro Runtime no Robô Athos: {e}\n{tb}")
-                self._ui_log("❌ ERRO (RuntimeError)")
-                self._ui_log(str(e))
-                self._ui_log("")
-                self._ui_log("📌 Stacktrace:")
-                self._ui_log(tb)
+                self._ui_log(f"❌ ERRO (RuntimeError)\n{e}")
+                self._ui_log("\n📌 Stacktrace:\n" + tb)
                 self._ui_fail("Erro no processamento.")
-                try:
-                    self._safe_after(0, lambda: messagebox.showerror("Robô Athos — Erro", f"{e}"))
-                except Exception:
-                    pass
 
         except Exception as e:
-            # Erro geral (mostra stack)
+            import traceback
             tb = traceback.format_exc()
             logger.error(f"Erro no Robô Athos: {e}\n{tb}")
-
-            self._ui_log("❌ ERRO (Exception)")
-            self._ui_log(str(e))
-            self._ui_log("")
-            self._ui_log("📌 Stacktrace:")
-            self._ui_log(tb)
-
+            self._ui_log(f"❌ ERRO ({type(e).__name__})\n{e}")
+            self._ui_log("\n📌 Stacktrace:\n" + tb)
             self._ui_fail("Erro no processamento.")
-            try:
-                self._safe_after(0, lambda: messagebox.showerror("Robô Athos — Erro", f"{e}"))
-            except Exception:
-                pass
 
         finally:
             self._ui_reset_buttons()
-
     # =========================
     # UI helpers (thread-safe)
     # =========================
