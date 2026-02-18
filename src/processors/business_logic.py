@@ -676,18 +676,32 @@ class ProductProcessor:
             update_progress(0.3)
 
             # 1.5. Carregar dados de custo se precificação habilitada
-            if self.cost_pricing_engine and self.config.cost_file_path:
+            if self.config.enable_auto_pricing and self.config.cost_file_path:
                 update_status("💰 Carregando dados de custos...")
+
                 try:
-                    cost_loaded = self.cost_pricing_engine.load_base_data(self.config.cost_file_path)
+                    # garante Path
+                    cost_path = Path(self.config.cost_file_path)
+
+                    # cria engine se ainda não existir
+                    if self.cost_pricing_engine is None:
+                        from ..services.costing_pricing_engine import CostPricingEngine
+                        self.cost_pricing_engine = CostPricingEngine(mode=self.config.pricing_mode.value)
+
+                    cost_loaded = self.cost_pricing_engine.load_base_data(cost_path)
+
                     if cost_loaded:
                         logger.success("✅ Dados de custo carregados com sucesso")
                     else:
                         logger.warning("⚠️ Falha ao carregar dados de custo - precificação será pulada")
                         self.cost_pricing_engine = None
+
                 except Exception as e:
                     logger.error(f"❌ Erro ao carregar dados de custo: {e}")
                     self.cost_pricing_engine = None
+            else:
+                logger.info("ℹ️ Precificação desabilitada ou planilha de custos não definida")
+                self.cost_pricing_engine = None
 
             update_progress(0.35)
 

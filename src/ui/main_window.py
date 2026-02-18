@@ -86,13 +86,19 @@ class MainWindow:
                     db_path=self.config.categories_db_path,
                     password=self.config.categories_password
                 )
+                self.category_manager_available = True
+                self.category_manager_unavailable_reason = ""
                 logger.info(f"Gerenciador de categorias inicializado: {self.config.categories_db_path}")
             except Exception as e:
                 logger.error(f"Erro ao inicializar gerenciador de categorias: {e}")
                 self.category_manager = None
+                self.category_manager_available = False
+                self.category_manager_unavailable_reason = str(e)
         else:
             logger.warning("Sistema de categorias não disponível")
             self.category_manager = None
+            self.category_manager_available = False
+            self.category_manager_unavailable_reason = "Módulo de categorias não instalado"
 
         # Estado da aplicação
         self.processing = False
@@ -509,7 +515,7 @@ class MainWindow:
         section_title.pack(fill="x", padx=20, pady=(20, 15))
 
         # Ativar/desativar precificação
-        self.enable_pricing_var = tk.BooleanVar(value=getattr(self.config, "enable_pricing", False))
+        self.enable_pricing_var = tk.BooleanVar(value=bool(getattr(self.config, "enable_auto_pricing", False)))
 
         chk = ctk.CTkCheckBox(
             pricing_frame,
@@ -1064,7 +1070,7 @@ class MainWindow:
                     f"Valor inválido para prazo de exceção: '{self.exception_prazo_days_var.get()}', usando 0.")
 
             self.config.default_brand = self.brand_var.get() or "D'Rossi"
-            self.config.enable_pricing = bool(self.enable_pricing_var.get())
+            self.config.enable_auto_pricing = bool(self.enable_pricing_var.get())
 
             save_config(self.config)
             messagebox.showinfo("Sucesso", "✅ Configurações salvas com sucesso!")
@@ -1113,7 +1119,6 @@ class MainWindow:
         try:
             origin_file = Path(self.origin_file_var.get())
 
-            # ✅ USAR ABA SELECIONADA NO DROPDOWN
             selected_sheet = self.sheet_combobox.get()
             if not selected_sheet or selected_sheet in [
                 "Selecione um arquivo primeiro.",
@@ -1126,42 +1131,62 @@ class MainWindow:
             sheet_name = selected_sheet
             logger.info(f"📋 Aba selecionada para processamento: '{sheet_name}'")
 
-            # Configuração da marca
-            brand_name = self.brand_var.get() or "D'Rossi"
-            self.config.default_brand = brand_name
-
-            # ✅ ATUALIZAR CONFIGURAÇÃO COM OS VALORES DO PRAZO DE EXCEÇÃO
+            # Prazo de exceção
             self.config.enable_exception_prazo = self.enable_exception_prazo_var.get()
             try:
                 self.config.exception_prazo_days = int(self.exception_prazo_days_var.get())
             except ValueError:
                 self.config.exception_prazo_days = 0
 
+            # Marca digitada
+            brand_name = self.brand_var.get() or "D'Rossi"
+
             # Resolver fornecedor
             supplier_code, official_supplier_name = self.resolve_supplier_code(brand_name)
             logger.info(f"Fornecedor resolvido: code={supplier_code}, name='{official_supplier_name}'")
 
-            # Atualizar status UI
+            # ✅ OPÇÃO A: padroniza o nome usando default_brand
+            self.config.default_brand = official_supplier_name
+
+            # Só seta se o campo existir no AppConfig
+            if hasattr(self.config, "supplier_code"):
+                self.config.supplier_code = supplier_code
+
+            if hasattr(self.config, "enable_auto_pricing"):
+                self.config.enable_auto_pricing = bool(self.enable_pricing_var.get())
+
+            if hasattr(self.config, "cost_file_path"):
+                self.config.cost_file_path = Path(self.cost_file_var.get()) if self.enable_pricing_var.get() else None
+
+            # UI start
             self.root.after(0, self._processing_ui_start)
 
-            # Processar
-            result = self.processor.process(
+            # Callbacks compatíveis com o business_logic
+            def status_cb(msg: str):
+                self.root.after(0, lambda m=msg: self.status_var.set(m))
+
+            def progress_cb(value: float):
+                self.root.after(0, lambda v=float(value): self._on_progress(v, ""))
+
+            logger.info(
+                f"Pricing UI: enable={bool(self.enable_pricing_var.get())} cost_file='{self.cost_file_var.get()}'")
+            logger.info(
+                f"Pricing config: enable_auto_pricing={getattr(self.config, 'enable_auto_pricing', None)} cost_file_path={getattr(self.config, 'cost_file_path', None)}")
+            coro = self.processor.process_products(
                 origin_file=origin_file,
                 sheet_name=sheet_name,
-                supplier_code=supplier_code,
-                supplier_name=official_supplier_name,
-                enable_pricing=bool(self.enable_pricing_var.get()),
-                cost_file=Path(self.cost_file_var.get()) if self.enable_pricing_var.get() else None,
                 send_email=bool(self.send_email_var.get()),
-                email_config=self.config.email if self.send_email_var.get() else None,
-                on_progress=self._on_progress
+                status_callback=status_cb,
+                progress_callback=progress_cb
             )
+            result = asyncio.run(coro)
 
             self.root.after(0, lambda: self._processing_ui_finish(result))
 
         except Exception as e:
-            logger.error(f"Erro no processamento: {e}")
-            self.root.after(0, lambda: messagebox.showerror("Erro", f"Erro no processamento:\n{e}"))
+            err_msg = str(e)
+            logger.error(f"Erro no processamento: {err_msg}")
+            self.root.after(0, lambda m=err_msg: messagebox.showerror("Erro", f"Erro no processamento:\n{m}"))
         finally:
             self.processing = False
             self.root.after(0, self._processing_ui_end)
@@ -1261,59 +1286,49 @@ class MainWindow:
 
     def show_supplier_manager(self):
         """Mostra janela de gerenciamento de fornecedores (se disponível)."""
-        # Se o módulo UI não existe, já sinaliza
         if not SUPPLIER_SYSTEM_AVAILABLE or SupplierManagerWindow is None:
             messagebox.showinfo(
                 "Fornecedores (indisponível)",
                 "O módulo de Fornecedores não está disponível nesta instalação.\n"
-                "Se você precisar dele, instale as dependências e garanta que o arquivo "
-                "src/ui/components/supplier_manager.py exista."
+                "Garanta que src/ui/components/supplier_manager.py exista."
             )
             return
 
-        # Se o backend (sqlite/arquivo/permissão) não está ok, não abre
-        try:
-            available = bool(getattr(self, "supplier_db_available", False)) and bool(getattr(self.processor, "supplier_db", None))
-        except Exception:
-            available = False
+        # Se já existe janela aberta, foca nela
+        if self.supplier_manager_window and hasattr(self.supplier_manager_window, "window"):
+            try:
+                if self.supplier_manager_window.window and self.supplier_manager_window.window.winfo_exists():
+                    self.supplier_manager_window.window.focus()
+                    self.supplier_manager_window.window.lift()
+                    return
+            except Exception:
+                pass
 
-        if not available:
-            motivo = getattr(self, "supplier_status_message", "") or "Indisponível"
+        # Checar arquivo do banco (agora o manager abre por path)
+        if not self.supplier_db_path.exists():
             messagebox.showinfo(
                 "Fornecedores (indisponível)",
-                "O banco de fornecedores está indisponível no momento.\n\n"
-                f"Motivo: {motivo}\n\n"
-                "O app continua funcionando normalmente — apenas o gerenciamento de fornecedores fica desativado."
+                "Banco de fornecedores não encontrado.\n\n"
+                f"Caminho esperado:\n{self.supplier_db_path}"
             )
             return
 
         try:
-            # Reusa a instância do DB já inicializada no ProductProcessor
-            db = getattr(self.processor, "supplier_db", None)
-            if not db:
-                raise RuntimeError("supplier_db não inicializado")
+            mgr = SupplierManagerWindow(self.root, self.supplier_db_path)
 
-            # Evitar duplicar janela
-            if self.supplier_manager_window and hasattr(self.supplier_manager_window, "winfo_exists"):
-                try:
-                    if self.supplier_manager_window.winfo_exists():
-                        self.supplier_manager_window.focus()
-                        self.supplier_manager_window.lift()
-                        return
-                except Exception:
-                    pass
+            if getattr(mgr, "db_available", False):
+                mgr.admin_mode = False  # depois você pode implementar o AccessModeDialog
+                mgr.setup_window()
+                mgr.load_suppliers()
+                self.supplier_manager_window = mgr
+            else:
+                # O próprio SupplierManagerWindow já mostra warning via messagebox e log
+                return
 
-            self.supplier_manager_window = SupplierManagerWindow(self.root, db)
         except Exception as e:
             logger.error(f"Erro ao abrir gerenciador de fornecedores: {e}")
             messagebox.showerror("Erro", f"Não foi possível abrir o gerenciador de fornecedores:\n{e}")
         finally:
-            # Atualiza status no UI, caso algo tenha mudado
-            try:
-                self.supplier_db_available = bool(self.processor.is_supplier_db_available())
-                self.supplier_status_message = getattr(self.processor, "supplier_status_message", "") or ""
-            except Exception:
-                pass
             self.refresh_system_status()
 
     def show_category_manager(self):
