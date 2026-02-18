@@ -76,6 +76,7 @@ class MainWindow:
         except Exception:
             self.supplier_db_available = False
             self.supplier_status_message = 'Indisponível'
+
         # ✅ Caminho esperado do banco de fornecedores (para UI/diagnóstico)
         self.supplier_db_path = self.config.output_dir / "suppliers.db"
 
@@ -111,8 +112,12 @@ class MainWindow:
         self.log_viewer = None
         self.supplier_manager_window = None
 
-        # ✅ NOVO: janela do Robô Athos
+        # ✅ Robô Athos (frame embutido na aba)
         self.athos_tab_frame = None
+
+        # ✅ FIX: status do Robô Athos para refresh_system_status()
+        self.athos_available = bool(ATHOS_SYSTEM_AVAILABLE and AthosTabFrame is not None)
+        self.athos_unavailable_reason = "" if self.athos_available else "Módulo/arquivo src/ui/athos_window.py indisponível"
 
         # ✅ CONFIGURAR UI POR ÚLTIMO
         self.setup_ui()
@@ -607,7 +612,6 @@ class MainWindow:
         except Exception:
             pass
 
-
     def refresh_system_status(self):
         """Atualiza a interface conforme disponibilidade dos subsistemas."""
         # Status Fornecedores
@@ -619,7 +623,7 @@ class MainWindow:
             if btn_f:
                 btn_f.configure(state="normal")
         else:
-            reason = getattr(self, "supplier_db_unavailable_reason", "Indisponível")
+            reason = getattr(self, "supplier_status_message", "Indisponível") or "Indisponível"
             if status_f:
                 status_f.set(f"⚠️ Fornecedores: Indisponível — {reason}")
             if btn_f:
@@ -640,21 +644,15 @@ class MainWindow:
             if btn_c:
                 btn_c.configure(state="disabled")
 
-        # Status Robô Athos
+        # Status Robô Athos (apenas indicador)
         status_a = getattr(self, "athos_status_var", None)
-        btn_a = getattr(self, "btn_athos", None)
         if getattr(self, "athos_available", False):
             if status_a:
                 status_a.set("✅ Robô Athos: OK")
-            if btn_a:
-                btn_a.configure(state="normal")
         else:
             reason = getattr(self, "athos_unavailable_reason", "Indisponível")
             if status_a:
                 status_a.set(f"⚠️ Robô Athos: Indisponível — {reason}")
-            if btn_a:
-                btn_a.configure(state="disabled")
-
 
     def create_processing_section(self):
         """Seção de processamento"""

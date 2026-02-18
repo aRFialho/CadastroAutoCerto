@@ -45,6 +45,10 @@ class AthosRow:
     fabricante_produto: Optional[str] = None
     nome_grupo3: Optional[str] = None
 
+    # Campo do SQL: gpa.descricao AS NOME_GRUPO
+    # Regra de prazo fornecedor: se estiver preenchido e for numérico, usar como prazo.
+    nome_grupo_produto: Optional[str] = None
+
     codbarra_kit: Optional[str] = None
     estoque_real_kit: Optional[float] = None
     prazo_kit: Optional[Any] = None
