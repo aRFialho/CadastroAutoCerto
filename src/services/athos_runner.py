@@ -139,21 +139,51 @@ class AthosRunner:
         writer = AthosExcelWriter()
         generated_files: List[Path] = []
 
-        def action_to_row(a) -> Dict[str, Any]:
+        def action_to_row(a, rule) -> Dict[str, Any]:
+            """
+            Converte ação do motor em uma linha para o template.
+            Regras pedidas:
+            - Não preencher Tipo Produto (não escrever coluna Tipo).
+            - Preencher Dias para Entrega (e também Data Entrega por compatibilidade).
+            - Em ESTOQUE_COMPARTILHADO: Dias para Entrega deve repetir Site Disponibilidade.
+            - Em ENVIO_IMEDIATO: não puxar itens de FORA_DE_LINHA (produto_inativo).
+            - Ajustar nomes de headers para bater com template (tolerante).
+            """
             row: Dict[str, Any] = {
                 "Codigo de Barras": a.codbarra,
-                "Tipo": a.tipo.value if hasattr(a.tipo, "value") else str(a.tipo),
+                # NÃO escrever Tipo/Tipo Produto
             }
-            if a.grupo3 is not None:
+
+            # Grupo3 (quando existir)
+            if getattr(a, "grupo3", None) is not None:
                 row["Grupo3"] = a.grupo3
-            if a.estoque_seguranca is not None:
-                row["Estoque Seguranca"] = a.estoque_seguranca
-            if a.dias_entrega is not None:
-                row["Data Entrega"] = a.dias_entrega
-            if a.site_disponibilidade is not None:
-                row["Site Disponibilidade"] = a.site_disponibilidade
-            if a.produto_inativo is not None:
+
+            # Estoque de Segurança (usar os dois nomes pra bater com template)
+            if getattr(a, "estoque_seguranca", None) is not None:
+                row["Estoque de Segurança"] = a.estoque_seguranca
+                row["Estoque Seguranca"] = a.estoque_seguranca  # fallback
+
+            # Dias / Data entrega (usar ambos)
+            dias = getattr(a, "dias_entrega", None)
+            site_disp = getattr(a, "site_disponibilidade", None)
+
+            # Regra pedida: ESTOQUE_COMPARTILHADO -> Dias para Entrega = Site Disponibilidade
+            # (se o motor já mandar dias_entrega ok, a gente mantém; se não, copia do site_disp)
+            if rule.value == "ESTOQUE_COMPARTILHADO":
+                if dias is None and site_disp is not None:
+                    dias = site_disp
+
+            if dias is not None:
+                row["Dias para Entrega"] = dias
+                row["Data Entrega"] = dias  # fallback (templates antigos)
+
+            if site_disp is not None:
+                row["Site Disponibilidade"] = site_disp
+
+            # Produto Inativo (Fora de linha)
+            if getattr(a, "produto_inativo", None) is not None:
                 row["Produto Inativo"] = a.produto_inativo
+
             return row
 
         rule_to_output = {
@@ -173,14 +203,23 @@ class AthosRunner:
             self._copy_template(template_path, out_path)
 
             actions = outputs.actions_by_rule.get(rule, []) or []
-            rows_to_write = [action_to_row(a) for a in actions]
 
-            # ✅ sheet_name tolerante: tenta PRODUTOS, mas o writer pode cair em fallback
+            # 1) ENVIO_IMEDIATO: não puxar códigos "Fora de Linha"
+            if rule.value == "ENVIO_IMEDIATO":
+                actions = [a for a in actions if not getattr(a, "produto_inativo", None)]
+
+            # 2) SEM_GRUPO: não precisa puxar marca/grupo "DMOV - MP"
+            # (se existir a propriedade marca no objeto de ação)
+            if rule.value == "NENHUM_GRUPO":
+                actions = [a for a in actions if (getattr(a, "marca", "") or "").strip().upper() != "DMOV - MP"]
+
+            rows_to_write = [action_to_row(a, rule) for a in actions]
+
             writer.write_rule_workbook(
                 out_path,
                 rows_to_write,
                 sheet_name="PRODUTOS",
-                clear_existing_data=True,
+                clear_existing_data=True
             )
 
             generated_files.append(out_path)
