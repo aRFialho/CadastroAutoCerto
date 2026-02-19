@@ -1,3 +1,5 @@
+# src/services/athos_models.py
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -37,16 +39,23 @@ class AthosRow:
     fabricante_produto: Optional[str] = None
     nome_grupo3: Optional[str] = None
 
-    nome_grupo_produto: Optional[str] = None
+    # ✅ NOVO: GRUPO do PA (prioridade no “prazo fornecedor”)
+    grupo_produto: Optional[str] = None
 
     codbarra_kit: Optional[str] = None
     estoque_real_kit: Optional[float] = None
     prazo_kit: Optional[Any] = None
     fabricante_kit: Optional[str] = None
 
+    # ✅ NOVO: GRUPO do KIT
+    grupo_kit: Optional[str] = None
+
     codbarra_pai: Optional[str] = None
     prazo_pai: Optional[Any] = None
     fabricante_pai: Optional[str] = None
+
+    # ✅ NOVO: GRUPO do PAI
+    grupo_pai: Optional[str] = None
 
 
 @dataclass

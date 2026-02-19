@@ -4,8 +4,8 @@ Service: AthosRunner
 Responsável por:
 - Ler o export do SQL (Excel)
 - Ler whitelist (PRODUTOS.xls/.xlsx) -> lista de EANs "imediatos"
-- Abrir template Athos e gerar 5 planilhas (cada uma com aba 'PRODUTOS')
-- Aplicar regras e preencher SOMENTE a aba 'PRODUTOS' do template
+- Abrir template Athos e gerar 5 planilhas (cada uma com aba 'PRODUTO(S)')
+- Aplicar regras e preencher SOMENTE a aba 'PRODUTO(S)' do template
 - Gerar relatório consolidado
 
 Saídas geradas (na ordem):
@@ -23,8 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
 from typing import Callable, Optional, Any, Dict, List
-
 import shutil
+import re
 
 from ..utils.logger import get_logger
 
@@ -84,47 +84,142 @@ class AthosRunner:
         sql_rows = self._read_excel_any(sql_export_path)
 
         progress(0.14, "Lendo whitelist...")
-        whitelist_rows = self._read_excel_any(whitelist_path)
-        whitelist_eans = self._extract_whitelist_eans(whitelist_rows)
+        from .athos_whitelist import load_whitelist
+        wl = load_whitelist(whitelist_path)
+        whitelist_eans = wl.eans
 
         self.logger.info(f"[AthosRunner] SQL rows: {len(sql_rows)}")
         self.logger.info(f"[AthosRunner] Whitelist EANs: {len(whitelist_eans)}")
 
         progress(0.22, "Aplicando regras...")
-        from .athos_rules import AthosRulesEngine
+        from .athos_rules_engine import process_rows
 
-        engine = AthosRulesEngine(
+        # ✅ Instancia DB 1x só (e não quebra se faltar)
+        supplier_db = None
+        try:
+            from ..core.supplier_database import SupplierDatabase
+            supplier_db = SupplierDatabase()
+        except Exception as e:
+            supplier_db = None
+            self.logger.warning(f"[AthosRunner] SupplierDatabase indisponível: {e}")
+
+        def prazo_lookup(marca: str) -> Optional[int]:
+            if not marca:
+                return None
+            if supplier_db is None:
+                return None
+            try:
+                s = supplier_db.search_supplier_by_name(marca)
+                prazo = getattr(s, "prazo_dias", None) if s else None
+                return int(prazo) if prazo is not None else None
+            except Exception:
+                return None
+
+        outputs = process_rows(
             sql_rows=sql_rows,
-            whitelist_eans=whitelist_eans,
-            supplier_prazo_lookup=self._supplier_prazo_lookup,
+            whitelist_imediatos=whitelist_eans,
+            supplier_prazo_lookup=prazo_lookup,
         )
-        outputs = engine.apply_all()
 
         progress(0.35, "Gerando planilhas...")
+        from .athos_excel_writer import AthosExcelWriter
+        from .athos_models import ORDERED_RULES, RuleName
+
+        writer = AthosExcelWriter()
         generated_files: List[Path] = []
 
-        # ✅ Writer robusto (detecta cabeçalho mesmo se não estiver na linha 1)
-        from .athos_excel_writer import AthosExcelWriter
-        writer = AthosExcelWriter()
+        def _parse_int_from_text(val: Any) -> Optional[int]:
+            if val is None:
+                return None
+            if isinstance(val, (int, float)):
+                try:
+                    return int(val)
+                except Exception:
+                    return None
+            s = str(val).strip()
+            if not s:
+                return None
+            m = re.search(r"(\d+)", s)
+            if not m:
+                return None
+            try:
+                return int(m.group(1))
+            except Exception:
+                return None
 
-        for idx, rule_key in enumerate(self.RULE_ORDER, start=1):
-            pct = 0.35 + (idx / len(self.RULE_ORDER)) * 0.45
-            progress(pct, f"Escrevendo {rule_key.replace('_', ' ')}...")
+        def _dias_para_entrega(dias: Any, site: Any) -> Any:
+            """
+            Regra pedida:
+            - 'Dias para Entrega' deve refletir o mesmo valor lógico de 'Site Disponibilidade'
+            """
+            if dias is not None:
+                return dias
 
-            out_path = self.output_dir / self.OUTPUT_NAMES[rule_key]
+            if site is None:
+                return None
+
+            site_s = str(site).strip()
+            if not site_s:
+                return None
+
+            if site_s.lower() == "imediata":
+                return 0
+
+            n = _parse_int_from_text(site_s)
+            return n if n is not None else site_s  # fallback: escreve o texto se não achar número
+
+        # ✅ converter ações -> linhas do template (headers reais do seu modelo)
+        def action_to_row(a) -> Dict[str, Any]:
+            row: Dict[str, Any] = {
+                "Código de Barras": a.codbarra,
+            }
+
+            # ✅ NÃO preencher Tipo Produto (pedido)
+            # row["Tipo Produto"] = ...
+
+            if a.grupo3 is not None:
+                row["GRUPO3"] = a.grupo3
+
+            if a.estoque_seguranca is not None:
+                row["Estoque de Segurança"] = a.estoque_seguranca
+
+            if a.produto_inativo is not None:
+                row["Produto Inativo"] = a.produto_inativo
+
+            if a.dias_entrega is not None:
+                row["Dias para Entrega"] = a.dias_entrega
+
+            if a.site_disponibilidade is not None:
+                row["Site Disponibilidade"] = a.site_disponibilidade
+
+            return row
+
+        rule_to_output = {
+            RuleName.FORA_DE_LINHA: "FORA_DE_LINHA",
+            RuleName.ESTOQUE_COMPARTILHADO: "ESTOQUE_COMPARTILHADO",
+            RuleName.ENVIO_IMEDIATO: "ENVIO_IMEDIATO",
+            RuleName.NENHUM_GRUPO: "SEM_GRUPO",
+            RuleName.OUTLET: "OUTLET",
+        }
+
+        for idx, rule in enumerate(ORDERED_RULES, start=1):
+            pct = 0.35 + (idx / len(ORDERED_RULES)) * 0.45
+            progress(pct, f"Escrevendo {rule.value}...")
+
+            key = rule_to_output[rule]
+            out_path = self.output_dir / self.OUTPUT_NAMES[key]
             self._copy_template(template_path, out_path)
 
-            rule_out = outputs.get(rule_key)
-            rows_raw = rule_out.rows if rule_out else []
-            rows_to_write = self._map_rows_for_template(rows_raw, rule_key)
+            actions = outputs.actions_by_rule.get(rule, []) or []
+            rows_to_write = [action_to_row(a) for a in actions]
 
+            # ✅ writer tem fallback de aba (PRODUTO/PRODUTOS/...)
             writer.write_rule_workbook(
-                workbook_path=out_path,
-                rows=rows_to_write,
+                out_path,
+                rows_to_write,
                 sheet_name="PRODUTOS",
                 clear_existing_data=True,
             )
-
             generated_files.append(out_path)
 
         progress(0.86, "Gerando relatório consolidado...")
@@ -140,61 +235,6 @@ class AthosRunner:
 
         progress(1.0, "Concluído ✅")
         return AthosRunResult(generated_files=generated_files, report_path=report_path)
-
-    # =========================
-    # Template mapping
-    # =========================
-    def _map_rows_for_template(self, rows_raw: List[Dict[str, Any]], rule_key: str) -> List[Dict[str, Any]]:
-        """Converte as linhas do motor (athos_rules.py) para os headers reais do template.
-
-        Motor gera chaves internas:
-          COD_BARRA, GRUPO3, ESTOQUE_SEG, DATA_ENTREGA, SITE_DISPONIBILIDADE, PRODUTO_INATIVO, TIPO
-
-        Template (cabeçalho):
-          Código de Barras | GRUPO3 | Estoque de Segurança | Produto Inativo | Dias para Entrega | Site Disponibilidade
-
-        Ajustes solicitados:
-        - NÃO preencher "Tipo Produto" (ignora TIPO em todas as planilhas).
-        - ESTOQUE_COMPARTILHADO: "Dias para Entrega" deve repetir o valor de "Site Disponibilidade".
-        """
-        mapped: List[Dict[str, Any]] = []
-
-        for r in rows_raw or []:
-            if not r:
-                continue
-
-            cod = r.get("COD_BARRA")
-            if cod is None or str(cod).strip() == "":
-                continue
-
-            grupo3 = r.get("GRUPO3")
-            estoque = r.get("ESTOQUE_SEG")
-            dias = r.get("DATA_ENTREGA")
-            site = r.get("SITE_DISPONIBILIDADE")
-            inativo = r.get("PRODUTO_INATIVO")
-
-            if rule_key == "ESTOQUE_COMPARTILHADO":
-                if dias is None and site is not None:
-                    dias = site
-                if site is None and dias is not None:
-                    site = dias
-
-            out: Dict[str, Any] = {"Código de Barras": cod}
-
-            if grupo3 is not None and str(grupo3).strip() != "":
-                out["GRUPO3"] = grupo3
-            if estoque is not None and str(estoque).strip() != "":
-                out["Estoque de Segurança"] = estoque
-            if inativo is not None and str(inativo).strip() != "":
-                out["Produto Inativo"] = inativo
-            if dias is not None and str(dias).strip() != "":
-                out["Dias para Entrega"] = dias
-            if site is not None and str(site).strip() != "":
-                out["Site Disponibilidade"] = site
-
-            mapped.append(out)
-
-        return mapped
 
     # ===== IO =====
     def _validate_inputs(self, sql_export_path: Path, whitelist_path: Path, template_path: Path) -> None:
@@ -268,80 +308,8 @@ class AthosRunner:
         df = df.dropna(how="all")
         return df.to_dict(orient="records")
 
-    def _extract_whitelist_eans(self, rows: List[Dict[str, Any]]) -> List[str]:
-        """Extrai lista de EANs da whitelist.
-
-        Aceita:
-        - coluna "EAN"
-        - ou primeira coluna que pareça EAN/código de barras
-        """
-        eans: List[str] = []
-        if not rows:
-            return eans
-
-        # Tenta achar coluna EAN
-        keys = list(rows[0].keys())
-        ean_key = None
-        for k in keys:
-            ku = str(k).strip().upper()
-            if ku in ("EAN", "CÓDIGO DE BARRAS", "CODIGO DE BARRAS", "CODBARRA", "COD_BARRA", "CODIGO"):
-                ean_key = k
-                break
-
-        if ean_key is None:
-            # fallback: primeira coluna
-            ean_key = keys[0]
-
-        for r in rows:
-            v = r.get(ean_key)
-            if v is None:
-                continue
-            s = str(v).strip()
-            if not s:
-                continue
-            eans.append(s)
-
-        # normaliza e remove duplicados mantendo ordem
-        seen = set()
-        out: List[str] = []
-        for s in eans:
-            s2 = "".join(ch for ch in s if ch.isdigit())
-            if not s2:
-                continue
-            if s2 in seen:
-                continue
-            seen.add(s2)
-            out.append(s2)
-        return out
-
-    # ===== Fornecedor (prazo) =====
-    def _supplier_prazo_lookup(self, marca: str) -> Optional[int]:
-        if not marca:
-            return None
-        try:
-            from ..core.supplier_database import SupplierDatabase
-            db = SupplierDatabase()
-        except Exception:
-            return None
-
-        try:
-            s = db.search_supplier_by_name(marca)
-            prazo = getattr(s, "prazo_dias", None) if s else None
-            return int(prazo) if prazo is not None else None
-        except Exception:
-            return None
-
     # ===== E-mail Athos =====
     def _send_email_athos(self, attachments: List[Path]) -> None:
-        """Envia as planilhas geradas para o e-mail do RPA Athus.
-
-        Requisito do negócio:
-        - Para: rpa.athus@apoiocorp.com.br
-        - Assunto: DROSSI PRODUTOS
-        - Anexar todas as planilhas geradas
-
-        Observação: usa as credenciais SMTP já configuradas em assets/config/settings.json.
-        """
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
         from email.mime.base import MIMEBase
@@ -406,17 +374,13 @@ class AthosRunner:
         lines.append("-" * 80)
 
         total = 0
-        for rule in self.RULE_ORDER:
-            rule_out = outputs.get(rule)
-            if not rule_out:
-                continue
-            for r in rule_out.report_lines:
-                total += 1
-                tipo = r.tipo or ""
-                marca = r.marca or ""
-                grupo3 = r.grupo3 or ""
-                acao = r.acao or ""
-                lines.append(f"{r.codbarra} | {tipo} | {marca} | {grupo3} | {acao}")
+        for r in outputs.report_lines:
+            total += 1
+            tipo = r.tipo.value if hasattr(r.tipo, "value") else str(r.tipo)
+            marca = r.marca or ""
+            grupo3 = r.grupo3 or ""
+            acao = r.acao or ""
+            lines.append(f"{r.codbarra} | {tipo} | {marca} | {grupo3} | {acao}")
 
         lines.append("")
         lines.append(f"Total de ações listadas: {total}")
