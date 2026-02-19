@@ -49,6 +49,15 @@ except ImportError:
     AthosTabFrame = None
     ATHOS_SYSTEM_AVAILABLE = False
 
+try:
+    from .components.price_updater_tab import PriceUpdaterTabFrame
+    from ..services.price_updater.service import PriceUpdaterService
+    PRICE_UPDATER_AVAILABLE = True
+except ImportError:
+    PriceUpdaterTabFrame = None
+    PriceUpdaterService = None
+    PRICE_UPDATER_AVAILABLE = False
+
 logger = get_logger("main_window")
 
 class MainWindow:
@@ -76,7 +85,6 @@ class MainWindow:
         except Exception:
             self.supplier_db_available = False
             self.supplier_status_message = 'Indisponível'
-
         # ✅ Caminho esperado do banco de fornecedores (para UI/diagnóstico)
         self.supplier_db_path = self.config.output_dir / "suppliers.db"
 
@@ -112,13 +120,10 @@ class MainWindow:
         self.log_viewer = None
         self.supplier_manager_window = None
 
-        # ✅ Robô Athos (frame embutido na aba)
+        # ✅ NOVO: janela do Robô Athos
         self.athos_tab_frame = None
 
-        # ✅ FIX: status do Robô Athos para refresh_system_status()
-        self.athos_available = bool(ATHOS_SYSTEM_AVAILABLE and AthosTabFrame is not None)
-        self.athos_unavailable_reason = "" if self.athos_available else "Módulo/arquivo src/ui/athos_window.py indisponível"
-
+        self.price_updater_service = PriceUpdaterService() if PRICE_UPDATER_AVAILABLE else None
         # ✅ CONFIGURAR UI POR ÚLTIMO
         self.setup_ui()
 
@@ -172,6 +177,8 @@ class MainWindow:
     def setup_ui(self):
         """Configura a interface"""
         self.root = ctk.CTk()
+        UI_BG = ("#070b12", "#070b12")
+        self.root.configure(fg_color=UI_BG)
         self.root.title("📊 Cadastro Automático D'Rossi v2.1")
         self.root.minsize(800, 700)
 
@@ -184,6 +191,13 @@ class MainWindow:
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
+        try:
+            from .visuals.modern_bg import ModernBackground
+            self.bg = ModernBackground(self.root)
+        except Exception as e:
+            self.bg = None
+            logger.warning(f"Background moderno desativado: {e}")
+
         # Ícone
         try:
             if hasattr(self.config, 'logo_path') and self.config.logo_path and self.config.logo_path.exists():
@@ -195,7 +209,6 @@ class MainWindow:
         self.create_header()
         self.create_main_content()
         self.create_footer()
-        self.create_floating_color_button()
 
         # ✅ Atualiza indicadores/estado de botões conforme disponibilidade de módulos
         self.refresh_system_status()
@@ -257,7 +270,9 @@ class MainWindow:
 
     def create_header(self):
         """Cria o cabeçalho"""
-        header_frame = ctk.CTkFrame(self.root, height=120)
+        from .components.glass_card import GlassCard
+
+        header_frame = GlassCard(self.root, height=120)
         header_frame.pack(fill="x", padx=20, pady=(20, 10))
         header_frame.pack_propagate(False)
 
@@ -282,29 +297,54 @@ class MainWindow:
 
     def create_main_content(self):
         """Cria o conteúdo principal (com abas)"""
-        # ✅ Abas: Cadastro | Robô Athos
-        self.tabview = ctk.CTkTabview(self.root)
+        # ✅ Abas: Cadastro | Robô Athos | Price
+        self.tabview = ctk.CTkTabview(self.root, fg_color=("#0b1220", "#0b1220"))
         self.tabview.pack(fill="both", expand=True, padx=20, pady=10)
+
+        try:
+            self.tabview._segmented_button.configure(
+                fg_color=("#0b1220", "#0b1220"),
+                selected_color=("#111d36", "#111d36"),
+                unselected_color=("#0b1220", "#0b1220"),
+                selected_hover_color=("#162447", "#162447"),
+                unselected_hover_color=("#0f1a30", "#0f1a30"),
+                text_color=("gray85", "gray85"),
+            )
+        except Exception:
+            pass
 
         self.tab_cadastro = self.tabview.add("Cadastro")
         self.tab_athos = self.tabview.add("Robô Athos")
+        self.tab_price_updater = self.tabview.add("Atualizar Preços")
+        UI_BG = ("#070b12", "#070b12")
 
-        # ===== Aba Cadastro (UI atual) =====
-        self.main_frame = ctk.CTkScrollableFrame(self.tab_cadastro)
+        for t in (self.tab_cadastro, self.tab_athos, self.tab_price_updater):
+            try:
+                t.configure(fg_color=UI_BG)
+            except Exception:
+                pass
+        # Aba Cadastro
+        UI_BG = ("#070b12", "#070b12")
+        UI_SURFACE = ("#0b1220", "#0b1220")
+
+        self.main_frame = ctk.CTkScrollableFrame(self.tab_cadastro, fg_color=UI_BG)
         self.main_frame.pack(fill="both", expand=True, padx=0, pady=0)
-
         self.create_file_section()
         self.create_config_section()
         self.create_pricing_section()
         self.create_email_section()
         self.create_processing_section()
 
-        # ===== Aba Robô Athos =====
+        # Aba Robô Athos
         self.create_athos_tab()
+
+        # Aba Atualizar Preços
+        self.create_price_updater_tab()
 
     def create_athos_tab(self):
         """Cria o conteúdo da aba Robô Athos (embutido na própria aba)."""
-        container = ctk.CTkFrame(self.tab_athos)
+        from .components.glass_card import GlassCard
+        container = GlassCard(self.tab_athos)
         container.pack(fill="both", expand=True, padx=20, pady=20)
 
         # Header simples dentro da aba
@@ -342,6 +382,10 @@ class MainWindow:
         try:
             self.athos_tab_frame = AthosTabFrame(container)
             self.athos_tab_frame.pack(fill="both", expand=True)
+            try:
+                self.athos_tab_frame.configure(fg_color=container.cget("fg_color"))
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"Erro ao montar AthosTabFrame: {e}")
             ctk.CTkLabel(
@@ -351,9 +395,33 @@ class MainWindow:
                 justify="left",
                 wraplength=900,
             ).pack(anchor="w", pady=(10, 0))
+
+    def create_price_updater_tab(self):
+        from .components.glass_card import GlassCard
+        container = GlassCard(self.tab_price_updater)  # ✅ CERTO
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        if not PRICE_UPDATER_AVAILABLE or not self.price_updater_service:
+            ctk.CTkLabel(
+                container,
+                text="❌ Atualizador de preços não disponível (imports/módulos não encontrados).",
+                text_color=("red", "red"),
+                justify="left",
+                wraplength=900,
+            ).pack(anchor="w")
+            return
+
+        tab = PriceUpdaterTabFrame(container, self.price_updater_service, self.config)
+        tab.pack(fill="both", expand=True)
+        try:
+            tab.configure(fg_color=container.cget("fg_color"))
+        except Exception:
+            pass
+
     def create_file_section(self):
         """Seção de seleção de arquivos"""
-        files_frame = ctk.CTkFrame(self.main_frame)
+        from .components.glass_card import GlassCard
+        files_frame = GlassCard(self.main_frame)
         files_frame.pack(fill="x", pady=(0, 20))
 
         section_title = ctk.CTkLabel(
@@ -387,6 +455,21 @@ class MainWindow:
             values=["Selecione um arquivo primeiro."],
             state="readonly"
         )
+
+        def style_combobox(cb: ctk.CTkComboBox):
+            cb.configure(
+                fg_color=("#0b1220", "#0b1220"),
+                border_color=("#23314d", "#23314d"),
+                button_color=("#111d36", "#111d36"),
+                button_hover_color=("#162447", "#162447"),
+                dropdown_fg_color=("#0b1220", "#0b1220"),
+                dropdown_hover_color=("#111d36", "#111d36"),
+                dropdown_text_color=("gray90", "gray90"),
+                text_color=("gray90", "gray90"),
+            )
+
+        style_combobox(self.sheet_combobox)
+
         self.sheet_combobox.pack(fill="x", pady=(0, 5))
 
         self.sheet_status_label = ctk.CTkLabel(
@@ -431,7 +514,9 @@ class MainWindow:
 
     def create_config_section(self):
         """Seção de configurações"""
-        config_frame = ctk.CTkFrame(self.main_frame)
+        from .components.glass_card import GlassCard
+
+        config_frame = GlassCard(self.main_frame)
         config_frame.pack(fill="x", pady=(0, 20))
 
         section_title = ctk.CTkLabel(
@@ -508,7 +593,9 @@ class MainWindow:
 
     def create_pricing_section(self):
         """Seção de precificação"""
-        pricing_frame = ctk.CTkFrame(self.main_frame)
+        from .components.glass_card import GlassCard
+
+        pricing_frame = GlassCard(self.main_frame)
         pricing_frame.pack(fill="x", pady=(0, 20))
 
         section_title = ctk.CTkLabel(
@@ -554,7 +641,9 @@ class MainWindow:
 
     def create_email_section(self):
         """Seção de e-mail"""
-        email_frame = ctk.CTkFrame(self.main_frame)
+        from .components.glass_card import GlassCard
+
+        email_frame = GlassCard(self.main_frame)
         email_frame.pack(fill="x", pady=(0, 20))
 
         section_title = ctk.CTkLabel(
@@ -612,6 +701,7 @@ class MainWindow:
         except Exception:
             pass
 
+
     def refresh_system_status(self):
         """Atualiza a interface conforme disponibilidade dos subsistemas."""
         # Status Fornecedores
@@ -623,7 +713,7 @@ class MainWindow:
             if btn_f:
                 btn_f.configure(state="normal")
         else:
-            reason = getattr(self, "supplier_status_message", "Indisponível") or "Indisponível"
+            reason = getattr(self, "supplier_db_unavailable_reason", "Indisponível")
             if status_f:
                 status_f.set(f"⚠️ Fornecedores: Indisponível — {reason}")
             if btn_f:
@@ -644,19 +734,26 @@ class MainWindow:
             if btn_c:
                 btn_c.configure(state="disabled")
 
-        # Status Robô Athos (apenas indicador)
+        # Status Robô Athos
         status_a = getattr(self, "athos_status_var", None)
+        btn_a = getattr(self, "btn_athos", None)
         if getattr(self, "athos_available", False):
             if status_a:
                 status_a.set("✅ Robô Athos: OK")
+            if btn_a:
+                btn_a.configure(state="normal")
         else:
             reason = getattr(self, "athos_unavailable_reason", "Indisponível")
             if status_a:
                 status_a.set(f"⚠️ Robô Athos: Indisponível — {reason}")
+            if btn_a:
+                btn_a.configure(state="disabled")
 
     def create_processing_section(self):
         """Seção de processamento"""
-        process_frame = ctk.CTkFrame(self.main_frame)
+        from .components.glass_card import GlassCard
+
+        process_frame = GlassCard(self.main_frame)
         process_frame.pack(fill="x", pady=(0, 20))
 
         section_title = ctk.CTkLabel(
@@ -796,89 +893,6 @@ class MainWindow:
             text_color=("gray60", "gray40")
         ).pack(anchor="e")
 
-    def create_floating_color_button(self):
-        """Botão flutuante (paleta de cores)"""
-        try:
-            self.color_palette_btn = ctk.CTkButton(
-                self.root,
-                text="🎨",
-                width=44,
-                height=44,
-                corner_radius=22,
-                command=self.open_color_customization,
-                fg_color="#1f538d"
-            )
-            self.color_palette_btn.place(relx=0.95, rely=0.90, anchor="center")
-        except Exception as e:
-            logger.debug(f"Erro ao criar botão flutuante: {e}")
-
-    def open_color_customization(self):
-        """Abre janela de customização de cores"""
-        try:
-            top = ctk.CTkToplevel(self.root)
-            top.title("🎨 Personalizar Cores")
-            top.geometry("520x420")
-
-            ctk.CTkLabel(top, text="Escolha uma cor base:", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 10))
-
-            colors = ["#1f538d", "#0f7a5c", "#7a0f3a", "#7a5c0f", "#5c0f7a", "#0f5c7a", "#222222"]
-            grid = ctk.CTkFrame(top, fg_color="transparent")
-            grid.pack(padx=20, pady=10)
-
-            for i, c in enumerate(colors):
-                btn = ctk.CTkButton(
-                    grid,
-                    text=c,
-                    width=140,
-                    height=42,
-                    fg_color=c,
-                    hover_color=self._darken_color(c),
-                    command=lambda cc=c: self._update_interface_colors(cc)
-                )
-                btn.grid(row=i // 2, column=i % 2, padx=10, pady=10, sticky="ew")
-
-            ctk.CTkButton(top, text="🔄 Resetar", command=self.reset_colors).pack(pady=(20, 10))
-
-        except Exception as e:
-            logger.error(f"Erro ao abrir customização de cores: {e}")
-
-    def reset_colors(self):
-        try:
-            if messagebox.askyesno("🔄 Resetar Cores", "Deseja resetar todas as cores para o padrão?\n\nIsso irá aplicar o tema azul padrão."):
-                ctk.set_default_color_theme("blue")
-                ctk.set_appearance_mode("dark")
-                logger.info("✅ Cores resetadas para o padrão")
-                messagebox.showinfo("✅ Sucesso", "Cores resetadas para o padrão!")
-        except Exception as e:
-            logger.error(f"Erro ao resetar cores: {e}")
-            messagebox.showerror("❌ Erro", f"Erro ao resetar cores:\n{e}")
-
-    def _update_interface_colors(self, color_hex: str):
-        """Atualiza cores da interface atual"""
-        try:
-            if hasattr(self, 'color_palette_btn'):
-                self.color_palette_btn.configure(fg_color=color_hex)
-            logger.info(f"🎨 Interface atualizada com cor: {color_hex}")
-        except Exception as e:
-            logger.error(f"Erro ao atualizar interface: {e}")
-
-    def _darken_color(self, color_hex: str, factor: float = 0.8) -> str:
-        """Escurece uma cor para efeito hover"""
-        try:
-            color_hex = color_hex.lstrip('#')
-            r = int(color_hex[0:2], 16)
-            g = int(color_hex[2:4], 16)
-            b = int(color_hex[4:6], 16)
-            r = int(r * factor)
-            g = int(g * factor)
-            b = int(b * factor)
-            return f"#{r:02x}{g:02x}{b:02x}"
-        except Exception:
-            return "#1f538d"
-
-    # =========================
-    # Arquivos / Planilhas
-    # =========================
     def guess_default_sheet(self, sheet_names: List[str]) -> Optional[str]:
         """Tenta descobrir a aba mais provável"""
         if not sheet_names:
