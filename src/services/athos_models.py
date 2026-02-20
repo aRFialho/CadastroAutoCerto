@@ -39,7 +39,7 @@ class AthosRow:
     fabricante_produto: Optional[str] = None
     nome_grupo3: Optional[str] = None
 
-    # ✅ NOVO: GRUPO do PA (prioridade no “prazo fornecedor”)
+    # ✅ GRUPO do PA (prioridade no “prazo fornecedor”)
     grupo_produto: Optional[str] = None
 
     codbarra_kit: Optional[str] = None
@@ -47,14 +47,14 @@ class AthosRow:
     prazo_kit: Optional[Any] = None
     fabricante_kit: Optional[str] = None
 
-    # ✅ NOVO: GRUPO do KIT
+    # ✅ GRUPO do KIT
     grupo_kit: Optional[str] = None
 
     codbarra_pai: Optional[str] = None
     prazo_pai: Optional[Any] = None
     fabricante_pai: Optional[str] = None
 
-    # ✅ NOVO: GRUPO do PAI
+    # ✅ GRUPO do PAI
     grupo_pai: Optional[str] = None
 
 
@@ -109,17 +109,40 @@ def normalize_ean(value: Any) -> Optional[str]:
 
 
 def parse_int_safe(value: Any) -> Optional[int]:
+    """
+    ✅ Parse tolerante:
+    - aceita "10", "10.0", 10, 10.5 -> 10
+    - aceita "10 dias", "Prazo: 15", "15D" -> 10/15 etc (pega o primeiro bloco numérico)
+    - se for "imediata" -> None (pra ser tratado por is_imediata)
+    - vazio/nan/none -> None
+    """
     if value is None:
         return None
+
     s = str(value).strip()
     if not s or s.lower() in ("nan", "none"):
         return None
-    if s.strip().lower() == "imediata":
+
+    if s.lower() == "imediata":
         return None
+
+    # "10.0"
     if re.fullmatch(r"\d+\.0", s):
         s = s[:-2]
+
+    # tentar conversão direta primeiro (casos numéricos puros)
     try:
         return int(float(s))
+    except Exception:
+        pass
+
+    # ✅ fallback: extrair o primeiro número dentro do texto
+    m = re.search(r"(-?\d+)", s)
+    if not m:
+        return None
+
+    try:
+        return int(m.group(1))
     except Exception:
         return None
 
@@ -142,4 +165,5 @@ def apply_prazo(action: AthosAction, prazo_days: int) -> None:
 
 def apply_imediata(action: AthosAction) -> None:
     action.dias_entrega = 0
-    action.site_disponibilidade = "IMEDIATA"
+    # ✅ você pediu "Imediata" quando dias=0
+    action.site_disponibilidade = "Imediata"

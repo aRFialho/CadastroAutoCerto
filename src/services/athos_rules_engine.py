@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Set
-from collections import defaultdict
+from collections import defaultdict, Counter
 
 from .athos_models import (
     AthosAction,
@@ -37,6 +37,9 @@ OUTLET_BRANDS_IMEDIATA = {"KONFORT", "CASA DO PUFF", "DIVINI DECOR"}
 
 # Ignorar no "Sem Grupo"
 IGNORE_SEM_GRUPO_BRANDS = {"DMOV - MP"}
+
+# ✅ Padrão único do sistema (pedido): "Imediata"
+IMEDIATA_TEXT = "Imediata"
 
 
 @dataclass
@@ -129,6 +132,21 @@ def process_rows(
     def is_locked(ean: str) -> bool:
         return ean in locked_by or ean in blocked_codbar
 
+    # ======================================================
+    # ✅ ESTOQUE DE DECISÃO (regra do projeto)
+    # Se o KIT se repete (mesmo CODBARRA_KIT em múltiplas linhas),
+    # NÃO usar estoque do PA; usar ESTOQUE_REAL_KIT (cálculo final do kit).
+    # ======================================================
+    kit_counts = Counter([r.codbarra_kit for r in rows if r.codbarra_kit])
+
+    def _estoque_decisao(r: AthosRow) -> float:
+        if r.codbarra_kit and kit_counts.get(r.codbarra_kit, 0) > 1:
+            try:
+                return float(r.estoque_real_kit or 0)
+            except Exception:
+                return float(r.estoque_real_produto or 0)
+        return float(r.estoque_real_produto or 0)
+
     # ✅ prioridade: GRUPO_* do item -> DB fornecedor -> PRAZO_*
     def _prazo_fornecedor(r: AthosRow, which: ItemTipo) -> int:
         if which == ItemTipo.PA:
@@ -163,7 +181,18 @@ def process_rows(
 
         return 0
 
+    # ✅ normaliza ação para consistência: dias==0 -> "Imediata"
+    def _normalize_action(a: AthosAction) -> None:
+        if a.dias_entrega == 0:
+            a.site_disponibilidade = IMEDIATA_TEXT
+        if a.site_disponibilidade is not None:
+            s = str(a.site_disponibilidade).strip()
+            if s.lower() == "imediata" or s.upper() == "IMEDIATA":
+                a.site_disponibilidade = IMEDIATA_TEXT
+
     def upsert_action(action: AthosAction) -> None:
+        _normalize_action(action)
+
         bucket = actions_by_rule[action.rule]
         existing = bucket.get(action.codbarra)
         if existing is None:
@@ -180,6 +209,9 @@ def process_rows(
             existing.dias_entrega = action.dias_entrega
         if existing.site_disponibilidade is None and action.site_disponibilidade is not None:
             existing.site_disponibilidade = action.site_disponibilidade
+
+        # ✅ normaliza também o existente depois de mesclar (blindagem total)
+        _normalize_action(existing)
 
         if not existing.marca and action.marca:
             existing.marca = action.marca
@@ -222,18 +254,31 @@ def process_rows(
     ) -> None:
         g3_pa = _safe_group3(r.nome_grupo3)
 
+        # ✅ normaliza site/prazo
+        final_site = site_disp
+        if dias_entrega == 0:
+            final_site = IMEDIATA_TEXT
+        elif final_site is not None:
+            s = str(final_site).strip()
+            if s.lower() == "imediata" or s.upper() == "IMEDIATA":
+                final_site = IMEDIATA_TEXT
+
+        final_msg_pa = IMEDIATA_TEXT if (msg_pa and msg_pa.strip().lower() == "imediata") else msg_pa
+        final_msg_kit = IMEDIATA_TEXT if (msg_kit and msg_kit.strip().lower() == "imediata") else msg_kit
+        final_msg_pai = IMEDIATA_TEXT if (msg_pai and msg_pai.strip().lower() == "imediata") else msg_pai
+
         if include_pa and r.codbarra_produto and not is_locked(r.codbarra_produto):
             a = AthosAction(rule=rule, tipo=ItemTipo.PA, codbarra=r.codbarra_produto)
             a.grupo3 = grupo3
             a.produto_inativo = produto_inativo
             a.dias_entrega = dias_entrega
-            a.site_disponibilidade = site_disp
+            a.site_disponibilidade = final_site
             a.estoque_seguranca = estoque_pa
             a.marca = r.fabricante_produto or ""
             a.grupo3_origem_pa = g3_pa
-            if msg_pa:
-                a.add_msg(msg_pa)
-                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, msg_pa)
+            if final_msg_pa:
+                a.add_msg(final_msg_pa)
+                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, final_msg_pa)
             upsert_action(a)
             lock(a.codbarra, rule)
 
@@ -242,13 +287,13 @@ def process_rows(
             a.grupo3 = grupo3
             a.produto_inativo = produto_inativo
             a.dias_entrega = dias_entrega
-            a.site_disponibilidade = site_disp
+            a.site_disponibilidade = final_site
             a.estoque_seguranca = estoque_kit
             a.marca = r.fabricante_kit or ""
             a.grupo3_origem_pa = g3_pa
-            if msg_kit:
-                a.add_msg(msg_kit)
-                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, msg_kit)
+            if final_msg_kit:
+                a.add_msg(final_msg_kit)
+                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, final_msg_kit)
             upsert_action(a)
             lock(a.codbarra, rule)
 
@@ -257,13 +302,13 @@ def process_rows(
             a.grupo3 = grupo3
             a.produto_inativo = produto_inativo
             a.dias_entrega = dias_entrega
-            a.site_disponibilidade = site_disp
+            a.site_disponibilidade = final_site
             a.estoque_seguranca = estoque_pai
             a.marca = r.fabricante_pai or ""
             a.grupo3_origem_pa = g3_pa
-            if msg_pai:
-                a.add_msg(msg_pai)
-                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, msg_pai)
+            if final_msg_pai:
+                a.add_msg(final_msg_pai)
+                report(rule, a.codbarra, a.tipo, a.marca or "", g3_pa, final_msg_pai)
             upsert_action(a)
             lock(a.codbarra, rule)
 
@@ -274,7 +319,7 @@ def process_rows(
         g3 = grupo3_bucket(r.nome_grupo3)
         if g3 != RuleName.FORA_DE_LINHA.value:
             continue
-        if (r.estoque_real_produto or 0) <= 0 and r.codbarra_produto:
+        if _estoque_decisao(r) <= 0 and r.codbarra_produto:
             emit_for_pa_kit_pai(
                 RuleName.FORA_DE_LINHA,
                 r,
@@ -302,13 +347,20 @@ def process_rows(
             # prazo do PA (pode ser "IMEDIATA" ou número)
             if is_imediata(r.prazo_produto):
                 a = AthosAction(rule=RuleName.ESTOQUE_COMPARTILHADO, tipo=ItemTipo.KIT, codbarra=r.codbarra_kit)
-                apply_imediata(a)
+                apply_imediata(a)  # já vira "Imediata" via models + normalize
                 a.marca = r.fabricante_kit or ""
                 a.grupo3_origem_pa = _safe_group3(r.nome_grupo3)
-                a.add_msg("PRAZO HERDADO DO PA (IMEDIATA)")
+                a.add_msg("PRAZO HERDADO DO PA (Imediata)")
                 upsert_action(a)
                 lock(a.codbarra, RuleName.ESTOQUE_COMPARTILHADO)
-                report(RuleName.ESTOQUE_COMPARTILHADO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", "PRAZO HERDADO DO PA (IMEDIATA)")
+                report(
+                    RuleName.ESTOQUE_COMPARTILHADO,
+                    a.codbarra,
+                    a.tipo,
+                    a.marca or "",
+                    a.grupo3_origem_pa or "",
+                    "PRAZO HERDADO DO PA (Imediata)",
+                )
                 continue
 
             p = parse_int_safe(r.prazo_produto)
@@ -323,7 +375,14 @@ def process_rows(
             a.add_msg(f"PRAZO HERDADO DO PA: {p} DIAS")
             upsert_action(a)
             lock(a.codbarra, RuleName.ESTOQUE_COMPARTILHADO)
-            report(RuleName.ESTOQUE_COMPARTILHADO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", f"PRAZO HERDADO DO PA: {p} DIAS")
+            report(
+                RuleName.ESTOQUE_COMPARTILHADO,
+                a.codbarra,
+                a.tipo,
+                a.marca or "",
+                a.grupo3_origem_pa or "",
+                f"PRAZO HERDADO DO PA: {p} DIAS",
+            )
 
         if pai_key != "__SEM_PAI__" and kit_prazos and not is_locked(pai_key):
             maior = max(kit_prazos)
@@ -335,7 +394,14 @@ def process_rows(
             a.add_msg(f"MAIOR PRAZO DOS KITS: {maior} DIAS")
             upsert_action(a)
             lock(a.codbarra, RuleName.ESTOQUE_COMPARTILHADO)
-            report(RuleName.ESTOQUE_COMPARTILHADO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", f"MAIOR PRAZO DOS KITS: {maior} DIAS")
+            report(
+                RuleName.ESTOQUE_COMPARTILHADO,
+                a.codbarra,
+                a.tipo,
+                a.marca or "",
+                a.grupo3_origem_pa or "",
+                f"MAIOR PRAZO DOS KITS: {maior} DIAS",
+            )
 
     # ======================================================
     # 3) ENVIO IMEDIATO
@@ -355,7 +421,14 @@ def process_rows(
             a.add_msg("RETIRADO DO GRUPO3 ENVIO IMEDIATO")
             upsert_action(a)
             lock(a.codbarra, RuleName.ENVIO_IMEDIATO)
-            report(RuleName.ENVIO_IMEDIATO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", "RETIRADO DO GRUPO3 ENVIO IMEDIATO")
+            report(
+                RuleName.ENVIO_IMEDIATO,
+                a.codbarra,
+                a.tipo,
+                a.marca or "",
+                a.grupo3_origem_pa or "",
+                "RETIRADO DO GRUPO3 ENVIO IMEDIATO",
+            )
 
     # 3.2) regra especial só relatório
     for pai_key, group_rows in by_pai.items():
@@ -367,7 +440,7 @@ def process_rows(
         if not special_pas:
             continue
 
-        all_le_zero = all((rr.estoque_real_produto or 0) <= 0 for rr in grp)
+        all_le_zero = all(_estoque_decisao(rr) <= 0 for rr in grp)
         if not all_le_zero:
             continue
 
@@ -403,7 +476,7 @@ def process_rows(
         if not grp:
             continue
 
-        stocks = {r.codbarra_produto: float(r.estoque_real_produto or 0) for r in grp if r.codbarra_produto}
+        stocks = {r.codbarra_produto: _estoque_decisao(r) for r in grp if r.codbarra_produto}
         all_gt_zero = bool(stocks) and all(v > 0 for v in stocks.values())
         all_le_zero = bool(stocks) and all(v <= 0 for v in stocks.values())
 
@@ -413,19 +486,19 @@ def process_rows(
             if pai_key != "__SEM_PAI__" and not is_locked(pai_key):
                 a = AthosAction(rule=RuleName.ENVIO_IMEDIATO, tipo=ItemTipo.PAI, codbarra=pai_key)
                 a.dias_entrega = dias
-                a.site_disponibilidade = site
+                a.site_disponibilidade = IMEDIATA_TEXT if dias == 0 else site
                 a.estoque_seguranca = 0
                 a.marca = grp[0].fabricante_pai or ""
                 a.grupo3_origem_pa = RuleName.ENVIO_IMEDIATO.value
-                a.add_msg(msg)
+                a.add_msg(IMEDIATA_TEXT if msg.strip().lower() == "imediata" else msg)
                 upsert_action(a)
                 lock(a.codbarra, RuleName.ENVIO_IMEDIATO)
-                report(RuleName.ENVIO_IMEDIATO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", msg)
+                report(RuleName.ENVIO_IMEDIATO, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", a.mensagens[-1])
 
         # DMOV2
         if marca_group == "DMOV2":
             for r in grp:
-                disp = float(r.estoque_real_produto or 0)
+                disp = _estoque_decisao(r)
                 if disp > 0:
                     emit_for_pa_kit_pai(
                         RuleName.ENVIO_IMEDIATO, r,
@@ -459,11 +532,11 @@ def process_rows(
                     emit_for_pa_kit_pai(
                         RuleName.ENVIO_IMEDIATO, r,
                         estoque_pa=0, estoque_kit=0, estoque_pai=0,
-                        dias_entrega=0, site_disp="IMEDIATA",
-                        msg_pa="IMEDIATA",
-                        msg_kit="IMEDIATA",
+                        dias_entrega=0, site_disp=IMEDIATA_TEXT,
+                        msg_pa=IMEDIATA_TEXT,
+                        msg_kit=IMEDIATA_TEXT,
                     )
-                set_pai(dias=0, site="IMEDIATA", msg="IMEDIATA")
+                set_pai(dias=0, site=IMEDIATA_TEXT, msg=IMEDIATA_TEXT)
             elif all_le_zero:
                 for r in grp:
                     p = _prazo_fornecedor(r, ItemTipo.PA)
@@ -479,7 +552,7 @@ def process_rows(
             else:
                 # misto: quem tem estoque vira imediata, quem não tem -> fornecedor, pai vira imediata
                 for r in grp:
-                    disp = float(r.estoque_real_produto or 0)
+                    disp = _estoque_decisao(r)
                     if disp <= 0:
                         p = _prazo_fornecedor(r, ItemTipo.PA)
                         emit_for_pa_kit_pai(
@@ -493,11 +566,11 @@ def process_rows(
                         emit_for_pa_kit_pai(
                             RuleName.ENVIO_IMEDIATO, r,
                             estoque_pa=0, estoque_kit=0, estoque_pai=0,
-                            dias_entrega=0, site_disp="IMEDIATA",
-                            msg_pa="IMEDIATA",
-                            msg_kit="IMEDIATA",
+                            dias_entrega=0, site_disp=IMEDIATA_TEXT,
+                            msg_pa=IMEDIATA_TEXT,
+                            msg_kit=IMEDIATA_TEXT,
                         )
-                set_pai(dias=0, site="IMEDIATA", msg="IMEDIATA")
+                set_pai(dias=0, site=IMEDIATA_TEXT, msg=IMEDIATA_TEXT)
             continue
 
         # Outras marcas (1 dia quando tem estoque)
@@ -525,7 +598,7 @@ def process_rows(
             set_pai(dias=pmax, site=str(pmax), msg=f"PRAZO DEFINIDO {pmax} DIAS (FORNECEDOR)")
         else:
             for r in grp:
-                disp = float(r.estoque_real_produto or 0)
+                disp = _estoque_decisao(r)
                 if disp <= 0:
                     p = _prazo_fornecedor(r, ItemTipo.PA)
                     emit_for_pa_kit_pai(
@@ -547,10 +620,28 @@ def process_rows(
 
     # ======================================================
     # 4) NENHUM GRUPO
+    # Regra ajustada:
+    # - Só entra aqui se NOME_GRUPO3 estiver vazio
+    # - E também NÃO existir nenhum GRUPO_* (mesmo em texto)
+    #   (ex: "2 Lugares" já conta como grupo => NÃO é sem grupo)
     # ======================================================
+
+    def _has_any_grupo_text(r: AthosRow) -> bool:
+        return any(
+            (str(v).strip() != "" and str(v).strip().lower() not in ("nan", "none"))
+            for v in (r.grupo_produto, r.grupo_kit, r.grupo_pai)
+            if v is not None
+        )
+
     for r in rows:
+        # ✅ se tem grupo3 (nome_grupo3), não é SEM_GRUPO
         if grupo3_bucket(r.nome_grupo3) is not None:
             continue
+
+        # ✅ NOVO: se já existe qualquer GRUPO_* preenchido (mesmo texto), também NÃO é SEM_GRUPO
+        if _has_any_grupo_text(r):
+            continue
+
         if not r.codbarra_produto:
             continue
         if not (r.fabricante_produto or "").strip():
@@ -560,10 +651,9 @@ def process_rows(
         if is_locked(r.codbarra_produto):
             continue
 
-        disp = float(r.estoque_real_produto or 0)
+        disp = _estoque_decisao(r)
 
         if disp > 0:
-            # ✅ agora preenche dias + estoque (0) além de mover grupo3
             if r.codbarra_produto in whitelist_imediatos:
                 emit_for_pa_kit_pai(
                     RuleName.NENHUM_GRUPO, r,
@@ -605,7 +695,7 @@ def process_rows(
 
         # marca do grupo (PA)
         marca_group = norm_upper(grp[0].fabricante_produto)
-        stocks = {r.codbarra_produto: float(r.estoque_real_produto or 0) for r in grp if r.codbarra_produto}
+        stocks = {r.codbarra_produto: _estoque_decisao(r) for r in grp if r.codbarra_produto}
 
         all_gt_zero = bool(stocks) and all(v > 0 for v in stocks.values())
         any_le_zero = bool(stocks) and any(v <= 0 for v in stocks.values())
@@ -614,19 +704,19 @@ def process_rows(
             if pai_key != "__SEM_PAI__" and not is_locked(pai_key):
                 a = AthosAction(rule=RuleName.OUTLET, tipo=ItemTipo.PAI, codbarra=pai_key)
                 a.dias_entrega = dias
-                a.site_disponibilidade = site
+                a.site_disponibilidade = IMEDIATA_TEXT if dias == 0 else site
                 a.estoque_seguranca = 0
                 a.marca = grp[0].fabricante_pai or ""
                 a.grupo3_origem_pa = RuleName.OUTLET.value
-                a.add_msg(msg)
+                a.add_msg(IMEDIATA_TEXT if msg.strip().lower() == "imediata" else msg)
                 upsert_action(a)
                 lock(a.codbarra, RuleName.OUTLET)
-                report(RuleName.OUTLET, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", msg)
+                report(RuleName.OUTLET, a.codbarra, a.tipo, a.marca or "", a.grupo3_origem_pa or "", a.mensagens[-1])
 
         # Cenário A: PA sem estoque -> PA=1000 / KIT=0 / PAI=0, prazo fornecedor
         # (aplicado por linha)
         for r in grp:
-            disp = float(r.estoque_real_produto or 0)
+            disp = _estoque_decisao(r)
             if disp <= 0:
                 p = _prazo_fornecedor(r, ItemTipo.PA)
                 emit_for_pa_kit_pai(
@@ -644,9 +734,9 @@ def process_rows(
                     emit_for_pa_kit_pai(
                         RuleName.OUTLET, r,
                         estoque_pa=0, estoque_kit=0, estoque_pai=0,
-                        dias_entrega=0, site_disp="IMEDIATA",
-                        msg_pa="IMEDIATA",
-                        msg_kit="IMEDIATA",
+                        dias_entrega=0, site_disp=IMEDIATA_TEXT,
+                        msg_pa=IMEDIATA_TEXT,
+                        msg_kit=IMEDIATA_TEXT,
                         msg_pai=None,
                         include_pai=False,
                     )
@@ -675,7 +765,7 @@ def process_rows(
         if pai_key != "__SEM_PAI__":
             if all_gt_zero:
                 if marca_group in OUTLET_BRANDS_IMEDIATA:
-                    set_pai_outlet(dias=0, site="IMEDIATA", msg="IMEDIATA")
+                    set_pai_outlet(dias=0, site=IMEDIATA_TEXT, msg=IMEDIATA_TEXT)
                 elif marca_group in OUTLET_BRANDS_3_DAYS:
                     set_pai_outlet(dias=3, site="3", msg="PRAZO DEFINIDO 3 DIAS")
                 else:

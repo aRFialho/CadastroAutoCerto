@@ -128,46 +128,6 @@ class AthosRunner:
         writer = AthosExcelWriter()
         generated_files: List[Path] = []
 
-        def _parse_int_from_text(val: Any) -> Optional[int]:
-            if val is None:
-                return None
-            if isinstance(val, (int, float)):
-                try:
-                    return int(val)
-                except Exception:
-                    return None
-            s = str(val).strip()
-            if not s:
-                return None
-            m = re.search(r"(\d+)", s)
-            if not m:
-                return None
-            try:
-                return int(m.group(1))
-            except Exception:
-                return None
-
-        def _dias_para_entrega(dias: Any, site: Any) -> Any:
-            """
-            Regra pedida:
-            - 'Dias para Entrega' deve refletir o mesmo valor lógico de 'Site Disponibilidade'
-            """
-            if dias is not None:
-                return dias
-
-            if site is None:
-                return None
-
-            site_s = str(site).strip()
-            if not site_s:
-                return None
-
-            if site_s.lower() == "imediata":
-                return 0
-
-            n = _parse_int_from_text(site_s)
-            return n if n is not None else site_s  # fallback: escreve o texto se não achar número
-
         # ✅ converter ações -> linhas do template (headers reais do seu modelo)
         def action_to_row(a) -> Dict[str, Any]:
             row: Dict[str, Any] = {
@@ -189,8 +149,19 @@ class AthosRunner:
             if a.dias_entrega is not None:
                 row["Dias para Entrega"] = a.dias_entrega
 
+            # ✅ REGRA: se dias_entrega == 0 -> Site Disponibilidade = "Imediata"
+            # Também normaliza caso venha "IMEDIATA" do engine
             if a.site_disponibilidade is not None:
-                row["Site Disponibilidade"] = a.site_disponibilidade
+                site = str(a.site_disponibilidade).strip()
+                if (a.dias_entrega == 0) or (site.lower() == "imediata") or (site.upper() == "IMEDIATA"):
+                    row["Site Disponibilidade"] = "Imediata"
+                else:
+                    row["Site Disponibilidade"] = site
+
+            # Se por algum motivo veio dias_entrega = 0 mas site_disponibilidade está None,
+            # ainda assim cumprir a regra:
+            if a.dias_entrega == 0 and "Site Disponibilidade" not in row:
+                row["Site Disponibilidade"] = "Imediata"
 
             return row
 
