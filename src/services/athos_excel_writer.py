@@ -7,6 +7,7 @@ Foco:
 ✅ preservar layout do template (só escreve valores)
 ✅ robusto com headers (acha coluna por nome)
 ✅ limpa linhas anteriores (dados) antes de escrever novos
+✅ (ajuste) preservar GRUPO_* como TEXTO (numérico e não numérico)
 """
 
 from __future__ import annotations
@@ -15,6 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import unicodedata
+import re
 
 from ..utils.logger import get_logger
 
@@ -35,11 +37,11 @@ class AthosExcelWriter:
     # Public API
     # =========================
     def write_rule_workbook(
-            self,
-            workbook_path: Path,
-            rows: List[Dict[str, Any]],
-            sheet_name: str = "PRODUTOS",
-            clear_existing_data: bool = True,
+        self,
+        workbook_path: Path,
+        rows: List[Dict[str, Any]],
+        sheet_name: str = "PRODUTOS",
+        clear_existing_data: bool = True,
     ) -> SheetWriteResult:
         workbook_path = Path(workbook_path)
         if not workbook_path.exists():
@@ -89,7 +91,13 @@ class AthosExcelWriter:
                 col_idx = self._find_col(header_map, k)
                 if col_idx is None:
                     continue
-                ws.cell(row=current_row, column=col_idx, value=v)
+
+                # ✅ AJUSTE MÍNIMO:
+                # Sempre gravar GRUPO/GRUPO_* como TEXTO, preservando valores não numéricos.
+                if self._is_group_key(k):
+                    ws.cell(row=current_row, column=col_idx, value=self._coerce_group_text(v))
+                else:
+                    ws.cell(row=current_row, column=col_idx, value=v)
 
             current_row += 1
 
@@ -190,3 +198,44 @@ class AthosExcelWriter:
                 return idx
 
         return None
+
+    def _is_group_key(self, key: Any) -> bool:
+        """
+        Detecta se a key do dicionário representa coluna de GRUPO/GRUPO_*.
+        Mantém int/float/texto como string no Excel.
+        """
+        nk = self._normalize(key)
+        if not nk:
+            return False
+        # cobre "grupo", "grupo produto", "grupo kit", "grupo pai", etc.
+        return "grupo" in nk
+
+    def _coerce_group_text(self, v: Any) -> str:
+        """
+        Converte valor do grupo para texto SEM perder:
+        - números (7, 7.0) -> "7"
+        - strings numéricas ("7", "7.0") -> "7"
+        - textos ("2 LUGARES") -> "2 LUGARES"
+        - vazio/nan/none -> ""
+        """
+        if v is None:
+            return ""
+
+        s = str(v).strip()
+        if not s or s.lower() in ("nan", "none"):
+            return ""
+
+        # trata casos "7.0"
+        if re.fullmatch(r"\d+\.0", s):
+            return s[:-2]
+
+        # se veio número float (ex: 7.0) mas como "7.00"
+        try:
+            if re.fullmatch(r"\d+(\.\d+)?", s):
+                f = float(s)
+                if f.is_integer():
+                    return str(int(f))
+        except Exception:
+            pass
+
+        return s

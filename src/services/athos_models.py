@@ -147,6 +147,31 @@ def parse_int_safe(value: Any) -> Optional[int]:
         return None
 
 
+def normalize_group_text(value: Any) -> str:
+    """
+    ✅ Normaliza GRUPO_* para TEXTO, preservando:
+    - números (7, 7.0, "7.0") -> "7"
+    - texto ("2 LUGARES") -> "2 LUGARES"
+    - vazio/nan/none -> ""
+    """
+    if value is None:
+        return ""
+    s = str(value).strip()
+    if not s or s.lower() in ("nan", "none"):
+        return ""
+    if re.fullmatch(r"\d+\.0", s):
+        return s[:-2]
+    # tenta "7.00" -> "7"
+    try:
+        if re.fullmatch(r"\d+(\.\d+)?", s):
+            f = float(s)
+            if f.is_integer():
+                return str(int(f))
+    except Exception:
+        pass
+    return s
+
+
 def is_imediata(value: Any) -> bool:
     return norm_text(value).strip().lower() == "imediata"
 

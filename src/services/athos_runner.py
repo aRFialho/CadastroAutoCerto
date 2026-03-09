@@ -1,3 +1,4 @@
+# src/services/athos_runner.py
 """
 Service: AthosRunner
 
@@ -14,7 +15,7 @@ Saídas geradas (na ordem):
 03_ENVIO_IMEDIATO.xlsx
 04_SEM_GRUPO.xlsx
 05_OUTLET.xlsx
-RELATORIO_CONSOLIDADO.txt
+RELATORIO_CONSOLIDADO.xlsx
 """
 
 from __future__ import annotations
@@ -22,9 +23,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Callable, Optional, Any, Dict, List
+from typing import Callable, Optional, Any, Dict, List, Iterable
 import shutil
-import re
+from collections import Counter
 
 from ..utils.logger import get_logger
 
@@ -54,7 +55,7 @@ class AthosRunner:
         "ENVIO_IMEDIATO": "03_ENVIO_IMEDIATO.xlsx",
         "SEM_GRUPO": "04_SEM_GRUPO.xlsx",
         "OUTLET": "05_OUTLET.xlsx",
-        "RELATORIO": "RELATORIO_CONSOLIDADO.txt",
+        "RELATORIO": "RELATORIO_CONSOLIDADO.xlsx",
     }
 
     def __init__(self, output_dir: Path, logger=logger_default):
@@ -131,39 +132,53 @@ class AthosRunner:
         # ✅ converter ações -> linhas do template (headers reais do seu modelo)
         def action_to_row(a) -> Dict[str, Any]:
             row: Dict[str, Any] = {
-                "Código de Barras": a.codbarra,
+                "Código de Barras": getattr(a, "codbarra", None),
             }
 
             # ✅ NÃO preencher Tipo Produto (pedido)
-            # row["Tipo Produto"] = ...
 
-            if a.grupo3 is not None:
+            if getattr(a, "grupo3", None) is not None:
                 row["GRUPO3"] = a.grupo3
 
-            if a.estoque_seguranca is not None:
+            if getattr(a, "estoque_seguranca", None) is not None:
                 row["Estoque de Segurança"] = a.estoque_seguranca
 
-            if a.produto_inativo is not None:
+            if getattr(a, "produto_inativo", None) is not None:
                 row["Produto Inativo"] = a.produto_inativo
 
-            if a.dias_entrega is not None:
+            if getattr(a, "dias_entrega", None) is not None:
                 row["Dias para Entrega"] = a.dias_entrega
 
             # ✅ REGRA: se dias_entrega == 0 -> Site Disponibilidade = "Imediata"
-            # Também normaliza caso venha "IMEDIATA" do engine
-            if a.site_disponibilidade is not None:
-                site = str(a.site_disponibilidade).strip()
-                if (a.dias_entrega == 0) or (site.lower() == "imediata") or (site.upper() == "IMEDIATA"):
+            site_disp = getattr(a, "site_disponibilidade", None)
+            dias = getattr(a, "dias_entrega", None)
+
+            if site_disp is not None:
+                site = str(site_disp).strip()
+                if (dias == 0) or (site.lower() == "imediata") or (site.upper() == "IMEDIATA"):
                     row["Site Disponibilidade"] = "Imediata"
                 else:
                     row["Site Disponibilidade"] = site
 
-            # Se por algum motivo veio dias_entrega = 0 mas site_disponibilidade está None,
-            # ainda assim cumprir a regra:
-            if a.dias_entrega == 0 and "Site Disponibilidade" not in row:
+            if dias == 0 and "Site Disponibilidade" not in row:
                 row["Site Disponibilidade"] = "Imediata"
 
             return row
+
+        # ✅ NORMALIZAÇÃO CRÍTICA:
+        # outputs.actions_by_rule[rule] pode ser list[AthosAction] OU dict[codbarra, AthosAction]
+        def _iter_actions(bucket: Any) -> Iterable[Any]:
+            if bucket is None:
+                return []
+            if isinstance(bucket, dict):
+                return list(bucket.values())
+            if isinstance(bucket, list):
+                return bucket
+            # fallback iterável
+            try:
+                return list(bucket)
+            except Exception:
+                return []
 
         rule_to_output = {
             RuleName.FORA_DE_LINHA: "FORA_DE_LINHA",
@@ -173,6 +188,8 @@ class AthosRunner:
             RuleName.OUTLET: "OUTLET",
         }
 
+        actions_by_rule = getattr(outputs, "actions_by_rule", {}) or {}
+
         for idx, rule in enumerate(ORDERED_RULES, start=1):
             pct = 0.35 + (idx / len(ORDERED_RULES)) * 0.45
             progress(pct, f"Escrevendo {rule.value}...")
@@ -181,10 +198,27 @@ class AthosRunner:
             out_path = self.output_dir / self.OUTPUT_NAMES[key]
             self._copy_template(template_path, out_path)
 
-            actions = outputs.actions_by_rule.get(rule, []) or []
-            rows_to_write = [action_to_row(a) for a in actions]
+            bucket = actions_by_rule.get(rule, None)
+            actions = _iter_actions(bucket)
 
-            # ✅ writer tem fallback de aba (PRODUTO/PRODUTOS/...)
+            # log útil pra validar rapidamente se OUTLET está emitindo KIT/PAI
+            try:
+                tipos = []
+                for a in actions:
+                    t = getattr(a, "tipo", "")
+                    tipos.append(t.value if hasattr(t, "value") else str(t))
+                self.logger.info(f"[AthosRunner] {rule.value}: {len(actions)} actions | tipos={dict(Counter(tipos))}")
+            except Exception:
+                pass
+
+            rows_to_write = []
+            for a in actions:
+                r = action_to_row(a)
+                # descarta lixo (ex.: caso bucket tivesse string/chave)
+                if not r.get("Código de Barras"):
+                    continue
+                rows_to_write.append(r)
+
             writer.write_rule_workbook(
                 out_path,
                 rows_to_write,
@@ -195,12 +229,15 @@ class AthosRunner:
 
         progress(0.86, "Gerando relatório consolidado...")
         report_path = self.output_dir / self.OUTPUT_NAMES["RELATORIO"]
-        self._write_report(report_path, outputs, sql_export_path, whitelist_path, template_path)
+        self._write_report(report_path, outputs, sql_rows, sql_export_path, whitelist_path, template_path)
 
         if send_email:
             progress(0.92, "Enviando e-mail (RPA Athus)...")
             try:
-                self._send_email_athos(generated_files)
+                attachments = list(generated_files)
+                if report_path and report_path.exists():
+                    attachments.append(report_path)
+                self._send_email_athos(attachments)
             except Exception as e:
                 self.logger.warning(f"⚠️ Falha ao enviar e-mail do Athos: {e}")
 
@@ -316,50 +353,171 @@ class AthosRunner:
             server.login(cfg.email.username, cfg.email.password)
             server.sendmail(msg["From"], [to_addr], msg.as_string())
 
-    # ===== Report =====
     def _write_report(
         self,
         report_path: Path,
         outputs: Any,
+        sql_rows: List[Dict[str, Any]],
         sql_export_path: Path,
         whitelist_path: Path,
         template_path: Path,
     ) -> None:
-        now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        """Wrapper: chama a implementação do relatório XLSX definida no módulo."""
+        return globals()["_write_report"](
+            self, report_path, outputs, sql_rows, sql_export_path, whitelist_path, template_path
+        )
 
-        lines: List[str] = []
-        lines.append("RELATÓRIO CONSOLIDADO — ROBÔ ATHOS")
-        lines.append(f"Gerado em: {now}")
-        lines.append("")
-        lines.append("Entradas:")
-        lines.append(f"- SQL export: {sql_export_path}")
-        lines.append(f"- Whitelist: {whitelist_path}")
-        lines.append(f"- Template: {template_path}")
-        lines.append("")
-        lines.append("ORDEM DE PROCESSAMENTO:")
-        for r in self.RULE_ORDER:
-            lines.append(f"- {r}")
-        lines.append("")
-        lines.append("AÇÕES (todas as planilhas):")
-        lines.append("EAN | TIPO | MARCA | GRUPO3 | AÇÃO")
-        lines.append("-" * 80)
 
-        total = 0
-        for r in outputs.report_lines:
-            total += 1
-            tipo = r.tipo.value if hasattr(r.tipo, "value") else str(r.tipo)
-            marca = r.marca or ""
-            grupo3 = r.grupo3 or ""
-            acao = r.acao or ""
-            lines.append(f"{r.codbarra} | {tipo} | {marca} | {grupo3} | {acao}")
+# ===== Report =====
+def _write_report(
+    self,
+    report_path: Path,
+    outputs: Any,
+    sql_rows: List[Dict[str, Any]],
+    sql_export_path: Path,
+    whitelist_path: Path,
+    template_path: Path,
+) -> None:
+    """Gera RELATORIO_CONSOLIDADO.xlsx (substitui o antigo .txt).
 
-        lines.append("")
-        lines.append(f"Total de ações listadas: {total}")
-        lines.append("")
-        lines.append("Legenda rápida:")
-        lines.append("- PA = Produto acabado")
-        lines.append("- KIT = Kit")
-        lines.append("- PAI = Pai do Kit")
-        lines.append("")
+    Requisito: trazer CÓD AUXILIAR (PA/KIT/PAI) + Dias para Entrega e Site Disponibilidade.
 
-        report_path.write_text("\n".join(lines), encoding="utf-8")
+    ✅ Correção: outputs.actions_by_rule pode vir como:
+       - Dict[RuleName, List[AthosAction]]  (padrão do seu athos_rules_engine)
+       - ou Dict[RuleName, Dict[codbarra, AthosAction]] (caso alguém altere no futuro)
+    """
+    from openpyxl import Workbook
+    from openpyxl.utils import get_column_letter
+    from .athos_models import normalize_ean
+
+    now = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    # Map COD_BARRA -> COD_AUXILIAR (por tipo)
+    codaux_pa: Dict[str, Any] = {}
+    codaux_kit: Dict[str, Any] = {}
+    codaux_pai: Dict[str, Any] = {}
+
+    for row in sql_rows:
+        pa = normalize_ean(row.get("CODBARRA_PRODUTO"))
+        kit = normalize_ean(row.get("CODBARRA_KIT"))
+        pai = normalize_ean(row.get("CODBARRA_PAI"))
+
+        if pa and pa not in codaux_pa:
+            codaux_pa[pa] = row.get("CODAUXILIAR_PRODUTO")
+        if kit and kit not in codaux_kit:
+            codaux_kit[kit] = row.get("CODAUXILIAR_KIT")
+        if pai and pai not in codaux_pai:
+            codaux_pai[pai] = row.get("CODAUXILIAR_PAI")
+
+    def _cod_aux(tipo: str, codbarra: str) -> Any:
+        if tipo == "PA":
+            return codaux_pa.get(codbarra)
+        if tipo == "KIT":
+            return codaux_kit.get(codbarra)
+        return codaux_pai.get(codbarra)
+
+    def _iter_bucket(bucket: Any):
+        """Normaliza o bucket para iterar como (codbarra, action)."""
+        if bucket is None:
+            return
+        if isinstance(bucket, dict):
+            for cb, a in bucket.items():
+                yield cb, a
+            return
+        if isinstance(bucket, list):
+            for a in bucket:
+                cb = getattr(a, "codbarra", None) or ""
+                yield cb, a
+            return
+        # fallback: tenta iterar
+        try:
+            for a in bucket:
+                cb = getattr(a, "codbarra", None) or ""
+                yield cb, a
+        except Exception:
+            return
+
+    wb = Workbook()
+
+    # Aba 1: METADADOS
+    ws_meta = wb.active
+    ws_meta.title = "META"
+    meta_lines = [
+        ("RELATÓRIO CONSOLIDADO — ROBÔ ATHOS", ""),
+        ("Gerado em", now),
+        ("SQL export", str(sql_export_path)),
+        ("Whitelist", str(whitelist_path)),
+        ("Template", str(template_path)),
+    ]
+    for i, (k, v) in enumerate(meta_lines, start=1):
+        ws_meta.cell(row=i, column=1).value = k
+        ws_meta.cell(row=i, column=2).value = v
+    ws_meta.column_dimensions["A"].width = 28
+    ws_meta.column_dimensions["B"].width = 90
+
+    # Aba 2: RELATORIO
+    ws = wb.create_sheet("RELATORIO")
+    headers = [
+        "REGRA",
+        "TIPO",
+        "COD_BARRA",
+        "COD_AUXILIAR",
+        "MARCA",
+        "GRUPO3_ORIGEM",
+        "GRUPO3_DESTINO",
+        "ESTOQUE_SEG",
+        "PRODUTO_INATIVO",
+        "DIAS_PARA_ENTREGA",
+        "SITE_DISPONIBILIDADE",
+        "ACAO",
+    ]
+    for col, h in enumerate(headers, start=1):
+        ws.cell(row=1, column=col).value = h
+
+    r = 2
+    actions_by_rule = getattr(outputs, "actions_by_rule", {}) or {}
+
+    for rule, bucket in actions_by_rule.items():
+        regra = rule.value if hasattr(rule, "value") else str(rule)
+
+        for codbarra, a in _iter_bucket(bucket):
+            if not codbarra:
+                continue
+
+            tipo_obj = getattr(a, "tipo", "")
+            tipo = tipo_obj.value if hasattr(tipo_obj, "value") else str(tipo_obj)
+
+            dias = getattr(a, "dias_entrega", None)
+            site = getattr(a, "site_disponibilidade", None)
+
+            # regra global: dias==0 => "Imediata"
+            if dias == 0:
+                site = "Imediata"
+            if isinstance(site, str) and site.strip().upper() == "IMEDIATA":
+                site = "Imediata"
+
+            ws.cell(row=r, column=1).value = regra
+            ws.cell(row=r, column=2).value = tipo
+            ws.cell(row=r, column=3).value = codbarra
+            ws.cell(row=r, column=4).value = _cod_aux(tipo, codbarra)
+            ws.cell(row=r, column=5).value = getattr(a, "marca", "") or ""
+            ws.cell(row=r, column=6).value = getattr(a, "grupo3_origem_pa", "") or ""
+            ws.cell(row=r, column=7).value = getattr(a, "grupo3", "") or ""
+            ws.cell(row=r, column=8).value = getattr(a, "estoque_seguranca", None)
+            ws.cell(row=r, column=9).value = getattr(a, "produto_inativo", None)
+            ws.cell(row=r, column=10).value = dias
+            ws.cell(row=r, column=11).value = site
+
+            msgs = getattr(a, "mensagens", None)
+            ws.cell(row=r, column=12).value = "; ".join(msgs) if isinstance(msgs, list) else (msgs or "")
+
+            r += 1
+
+    ws.freeze_panes = "A2"
+
+    widths = [22, 8, 20, 18, 22, 20, 20, 12, 14, 16, 18, 70]
+    for i, w in enumerate(widths, start=1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    wb.save(report_path)
