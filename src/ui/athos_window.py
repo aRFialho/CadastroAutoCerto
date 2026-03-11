@@ -46,6 +46,13 @@ class AthosTabFrame(ctk.CTkFrame):
         self.progress_var = tk.DoubleVar(value=0.0)
 
         self.send_email_var = tk.BooleanVar(value=True)
+        self.rule_vars = {
+            "FORA_DE_LINHA": tk.BooleanVar(value=True),
+            "ESTOQUE_COMPARTILHADO": tk.BooleanVar(value=True),
+            "ENVIO_IMEDIATO": tk.BooleanVar(value=True),
+            "SEM_GRUPO": tk.BooleanVar(value=True),
+            "OUTLET": tk.BooleanVar(value=True),
+        }
 
         self._build_ui()
 
@@ -61,6 +68,7 @@ class AthosTabFrame(ctk.CTkFrame):
         body.pack(fill="both", expand=True)
 
         self._section_files(body)
+        self._section_rules(body)
         self._section_actions(body)
         self._section_logs(body)
 
@@ -134,6 +142,54 @@ class AthosTabFrame(ctk.CTkFrame):
             command=self._select_output_dir,
         ).pack(side="right", padx=(0, 12), pady=12)
 
+
+    def _section_rules(self, parent):
+        frame = ctk.CTkFrame(parent)
+        frame.pack(fill="x", pady=(0, 16))
+
+        ctk.CTkLabel(
+            frame, text="🧩 Regras para gerar", font=ctk.CTkFont(size=18, weight="bold"), anchor="w"
+        ).pack(fill="x", padx=18, pady=(16, 10))
+
+        ctk.CTkLabel(
+            frame,
+            text="Selecione apenas as planilhas que deseja gerar nesta execução. Isso ajuda a testar uma regra isolada sem esperar o pacote inteiro.",
+            font=ctk.CTkFont(size=12),
+            text_color=("gray60", "gray40"),
+            justify="left",
+            wraplength=980,
+        ).pack(fill="x", padx=18, pady=(0, 10))
+
+        checks_wrap = ctk.CTkFrame(frame, fg_color="transparent")
+        checks_wrap.pack(fill="x", padx=18, pady=(0, 10))
+
+        grid = ctk.CTkFrame(checks_wrap)
+        grid.pack(fill="x")
+        for i in range(2):
+            grid.grid_columnconfigure(i, weight=1)
+
+        labels = [
+            ("FORA_DE_LINHA", "Fora de Linha"),
+            ("ESTOQUE_COMPARTILHADO", "Estoque Compartilhado"),
+            ("ENVIO_IMEDIATO", "Envio Imediato"),
+            ("SEM_GRUPO", "Sem Grupo"),
+            ("OUTLET", "Outlet"),
+        ]
+        for idx, (key, label) in enumerate(labels):
+            row = idx // 2
+            col = idx % 2
+            ctk.CTkCheckBox(
+                grid,
+                text=label,
+                variable=self.rule_vars[key],
+            ).grid(row=row, column=col, sticky="w", padx=14, pady=10)
+
+        btns = ctk.CTkFrame(frame, fg_color="transparent")
+        btns.pack(fill="x", padx=18, pady=(0, 16))
+
+        ctk.CTkButton(btns, text="Marcar todas", width=140, command=self._select_all_rules).pack(side="left")
+        ctk.CTkButton(btns, text="Limpar todas", width=140, command=self._clear_all_rules).pack(side="left", padx=(10,0))
+
     def _section_actions(self, parent):
         frame = ctk.CTkFrame(parent)
         frame.pack(fill="x", pady=(0, 16))
@@ -180,7 +236,7 @@ class AthosTabFrame(ctk.CTkFrame):
 
         self.log_text = ctk.CTkTextbox(frame, height=220)
         self.log_text.pack(fill="both", expand=True, padx=18, pady=(0, 16))
-        self._log("Robô Athos pronto. Selecione os arquivos e clique em “Atualizar Imediatos”.")
+        self._log("Robô Athos pronto. Selecione os arquivos, marque as regras desejadas e clique em gerar.")
 
     def _file_row(self, parent, label: str, var: tk.StringVar, button_text: str, filetypes):
         container = ctk.CTkFrame(parent, fg_color="transparent")
@@ -213,6 +269,17 @@ class AthosTabFrame(ctk.CTkFrame):
         if path:
             self.output_dir_var.set(path)
 
+    def _selected_rule_keys(self):
+        return [key for key, var in self.rule_vars.items() if bool(var.get())]
+
+    def _select_all_rules(self):
+        for var in self.rule_vars.values():
+            var.set(True)
+
+    def _clear_all_rules(self):
+        for var in self.rule_vars.values():
+            var.set(False)
+
     def _start_processing(self):
         if self.processing:
             messagebox.showwarning("Aviso", "Processamento já está em andamento.")
@@ -237,6 +304,11 @@ class AthosTabFrame(ctk.CTkFrame):
             messagebox.showerror("Campos obrigatórios", "Faltam itens:\n" + "\n".join(missing))
             return
 
+        selected_rules = self._selected_rule_keys()
+        if not selected_rules:
+            messagebox.showwarning("Aviso", "Selecione ao menos uma regra para gerar.")
+            return
+
         self.processing = True
         self.cancel_requested = False
         self.run_btn.configure(state="disabled", text="⏳ Processando...")
@@ -246,7 +318,7 @@ class AthosTabFrame(ctk.CTkFrame):
 
         thread = threading.Thread(
             target=self._run_processing_thread,
-            args=(sql_path, wl_path, tpl_path, out_dir, bool(self.send_email_var.get())),
+            args=(sql_path, wl_path, tpl_path, out_dir, bool(self.send_email_var.get()), selected_rules),
             daemon=True,
         )
         thread.start()
@@ -257,7 +329,7 @@ class AthosTabFrame(ctk.CTkFrame):
         self.cancel_requested = True
         self.status_var.set("Cancelamento solicitado...")
 
-    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path, send_email: bool):
+    def _run_processing_thread(self, sql_path: Path, wl_path: Path, tpl_path: Path, out_dir: Path, send_email: bool, selected_rules: list[str]):
         try:
             started = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
             self._ui_log(f"🚀 Início: {started}")
@@ -266,6 +338,7 @@ class AthosTabFrame(ctk.CTkFrame):
             self._ui_log(f"Template: {tpl_path}")
             self._ui_log(f"Saída: {out_dir}")
             self._ui_status("Validando serviço...")
+            self._ui_log("Regras selecionadas: " + ", ".join(selected_rules))
 
             if AthosRunner is None:
                 self._ui_log("❌ Service AthosRunner não encontrado/importável.")
@@ -291,6 +364,7 @@ class AthosTabFrame(ctk.CTkFrame):
                 template_path=tpl_path,
                 progress_callback=progress,
                 send_email=send_email,
+                selected_rules=selected_rules,
             )
 
             self._ui_progress(1.0)
@@ -331,7 +405,7 @@ class AthosTabFrame(ctk.CTkFrame):
             self.processing = False
             self.cancel_requested = False
             try:
-                self.run_btn.configure(state="normal", text="🔁 Atualizar Imediatos (gerar 5 planilhas + relatório)")
+                self.run_btn.configure(state="normal", text="🔁 Gerar planilhas selecionadas + relatório")
                 self.cancel_btn.configure(state="disabled")
             except Exception:
                 pass

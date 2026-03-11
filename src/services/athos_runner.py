@@ -23,7 +23,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from datetime import datetime
-from typing import Callable, Optional, Any, Dict, List, Iterable
+from typing import Callable, Optional, Any, Dict, List, Iterable, Sequence
 import shutil
 from collections import Counter
 
@@ -69,6 +69,7 @@ class AthosRunner:
         template_path: Path,
         progress_callback: Optional[ProgressCallback] = None,
         send_email: bool = True,
+        selected_rules: Optional[Sequence[str]] = None,
     ) -> AthosRunResult:
         progress = progress_callback or (lambda p, m="": None)
 
@@ -116,10 +117,23 @@ class AthosRunner:
             except Exception:
                 return None
 
+        requested_rule_keys = [r for r in (selected_rules or self.RULE_ORDER) if r in self.RULE_ORDER]
+        if not requested_rule_keys:
+            raise ValueError("Selecione ao menos uma regra para gerar.")
+
+        key_to_rule_label = {
+            "FORA_DE_LINHA": "FORA DE LINHA",
+            "ESTOQUE_COMPARTILHADO": "ESTOQUE COMPARTILHADO",
+            "ENVIO_IMEDIATO": "ENVIO IMEDIATO",
+            "SEM_GRUPO": "NENHUM GRUPO",
+            "OUTLET": "OUTLET",
+        }
+
         outputs = process_rows(
             sql_rows=sql_rows,
             whitelist_imediatos=whitelist_eans,
             supplier_prazo_lookup=prazo_lookup,
+            selected_rules=[key_to_rule_label[k] for k in requested_rule_keys],
         )
 
         progress(0.35, "Gerando planilhas...")
@@ -190,8 +204,10 @@ class AthosRunner:
 
         actions_by_rule = getattr(outputs, "actions_by_rule", {}) or {}
 
-        for idx, rule in enumerate(ORDERED_RULES, start=1):
-            pct = 0.35 + (idx / len(ORDERED_RULES)) * 0.45
+        selected_ordered_rules = [rule for rule in ORDERED_RULES if rule_to_output[rule] in requested_rule_keys]
+
+        for idx, rule in enumerate(selected_ordered_rules, start=1):
+            pct = 0.35 + (idx / max(len(selected_ordered_rules), 1)) * 0.45
             progress(pct, f"Escrevendo {rule.value}...")
 
             key = rule_to_output[rule]
@@ -228,7 +244,9 @@ class AthosRunner:
             generated_files.append(out_path)
 
         progress(0.86, "Gerando relatório consolidado...")
-        report_path = self.output_dir / self.OUTPUT_NAMES["RELATORIO"]
+        report_suffix = "_" + "_".join(requested_rule_keys) if len(requested_rule_keys) != len(self.RULE_ORDER) else ""
+        report_name = f"RELATORIO_CONSOLIDADO{report_suffix}.xlsx"
+        report_path = self.output_dir / report_name
         self._write_report(report_path, outputs, sql_rows, sql_export_path, whitelist_path, template_path)
 
         if send_email:
